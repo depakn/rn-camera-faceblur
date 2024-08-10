@@ -18,7 +18,7 @@ type RnFaceBlurProps = {
 
 const ComponentName = 'RnFaceBlurView';
 
-export const RnFaceBlurView =
+export const RnFaceBlur =
   UIManager.getViewManagerConfig(ComponentName) != null
     ? requireNativeComponent<RnFaceBlurProps>(ComponentName)
     : () => {

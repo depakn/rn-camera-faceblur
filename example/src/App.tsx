@@ -1,10 +1,10 @@
 import { StyleSheet, View } from 'react-native';
-import { RnFaceBlurView } from '@fortis-innovation-labs/rn-face-blur';
+import { RnFaceBlur } from '@fortis-innovation-labs/rn-face-blur';
 
 export default function App() {
   return (
     <View style={styles.container}>
-      <RnFaceBlurView color="#32a852" style={styles.box} />
+      <RnFaceBlur color="#FF0000" style={styles.box} />
     </View>
   );
 }

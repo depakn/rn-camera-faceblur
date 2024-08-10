@@ -1,3 +1,6 @@
+import AVFoundation
+import UIKit
+
 @objc(RnFaceBlurViewManager)
 class RnFaceBlurViewManager: RCTViewManager {
 
