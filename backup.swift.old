@@ -1,0 +1,346 @@
+import UIKit
+import AVFoundation
+import Vision
+import CoreImage
+import Photos
+
+@objc(RnFaceBlurViewManager)
+class RnFaceBlurViewManager: RCTViewManager {
+
+    override func view() -> UIView! {
+        return RnFaceBlurView()
+    }
+
+    override static func requiresMainQueueSetup() -> Bool {
+        return true
+    }
+
+    @objc func startCamera(_ node: NSNumber) {
+        self.bridge.uiManager.addUIBlock { (uiManager, viewRegistry) in
+            if let view = viewRegistry?[node] as? RnFaceBlurView {
+                DispatchQueue.main.async {
+                    view.startCamera()
+                }
+            }
+        }
+    }
+
+    @objc func stopCamera(_ node: NSNumber) {
+        self.bridge.uiManager.addUIBlock { (uiManager, viewRegistry) in
+            if let view = viewRegistry?[node] as? RnFaceBlurView {
+                DispatchQueue.main.async {
+                    view.stopCamera()
+                }
+            }
+        }
+    }
+
+    @objc func flipCamera(_ node: NSNumber) {
+        self.bridge.uiManager.addUIBlock { (uiManager, viewRegistry) in
+            if let view = viewRegistry?[node] as? RnFaceBlurView {
+                DispatchQueue.main.async {
+                    view.flipCamera()
+                }
+            }
+        }
+    }
+}
+
+class RnFaceBlurView: UIView {
+    private var captureSession: AVCaptureSession?
+    private var videoPreviewLayer: AVCaptureVideoPreviewLayer?
+    private var videoOutput: AVCaptureVideoDataOutput?
+    private var currentCamera: AVCaptureDevice?
+    private var cameraPosition: AVCaptureDevice.Position = .front
+    private var ciContext = CIContext()
+    private var movieOutput: AVCaptureMovieFileOutput?
+    private var blurOverlayLayer: CALayer?
+
+    // Other variables
+    private var assetWriter: AVAssetWriter?
+    private var assetWriterInput: AVAssetWriterInput?
+    private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+    private var isRecording = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupCamera()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        videoPreviewLayer?.frame = self.bounds
+    }
+
+    required init?(coder aDecoder: NSCoder) {
+        super.init(coder: aDecoder)
+        setupCamera()
+    }
+
+    @objc func startCamera() {
+        setupCamera()
+        startRecording()
+    }
+
+    @objc func stopCamera() {
+        stopRecording { url in
+            self.saveVideoToPhotos(videoURL: url)
+        }
+        captureSession?.stopRunning()
+    }
+
+    @objc func flipCamera() {
+        flipCameraPosition()
+    }
+
+    private func setupCamera() {
+        captureSession = AVCaptureSession()
+        captureSession?.sessionPreset = .high
+        guard let captureSession = captureSession else {
+            print("Failed to create AVCaptureSession")
+            return
+        }
+
+        currentCamera = cameraWithPosition(position: cameraPosition)
+
+        if let currentCamera = currentCamera {
+            do {
+                let input = try AVCaptureDeviceInput(device: currentCamera)
+                captureSession.addInput(input)
+            } catch {
+                print("Failed to create AVCaptureDeviceInput: \(error)")
+                return
+            }
+        } else {
+            print("Failed to find camera for position: \(cameraPosition)")
+            return
+        }
+
+        videoPreviewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
+        videoPreviewLayer?.videoGravity = .resizeAspectFill
+        videoPreviewLayer?.frame = self.bounds
+        layer.addSublayer(videoPreviewLayer!)
+
+        videoOutput = AVCaptureVideoDataOutput()
+        videoOutput?.setSampleBufferDelegate(self, queue: DispatchQueue(label: "videoQueue"))
+        captureSession.addOutput(videoOutput!)
+
+        movieOutput = AVCaptureMovieFileOutput()
+        if captureSession.canAddOutput(movieOutput!) {
+            captureSession.addOutput(movieOutput!)
+        }
+
+        captureSession.startRunning()
+
+        blurOverlayLayer = CALayer()
+        blurOverlayLayer?.frame = self.bounds
+        layer.addSublayer(blurOverlayLayer!)
+    }
+
+    private func cameraWithPosition(position: AVCaptureDevice.Position) -> AVCaptureDevice? {
+        let devices = AVCaptureDevice.devices(for: .video)
+        let device = devices.first { $0.position == position }
+
+        if device == nil {
+            print("No camera found for position: \(position)")
+        }
+
+        return device
+    }
+
+    func flipCameraPosition() {
+        guard let captureSession = captureSession else { return }
+
+        captureSession.beginConfiguration()
+
+        // Remove existing input
+        if let currentInput = captureSession.inputs.first as? AVCaptureDeviceInput {
+            captureSession.removeInput(currentInput)
+        }
+
+        // Switch camera
+        cameraPosition = (cameraPosition == .back) ? .front : .back
+        currentCamera = cameraWithPosition(position: cameraPosition)
+
+        // Add new input
+        guard let newInput = try? AVCaptureDeviceInput(device: currentCamera!) else { return }
+        captureSession.addInput(newInput)
+
+        captureSession.commitConfiguration()
+    }
+
+    private func detectFaces(in image: CIImage) -> [VNFaceObservation]? {
+        let faceDetectionRequest = VNDetectFaceRectanglesRequest()
+        let requestHandler = VNImageRequestHandler(ciImage: image, options: [:])
+        do {
+            try requestHandler.perform([faceDetectionRequest])
+            return faceDetectionRequest.results
+        } catch {
+            print("Face detection failed: \(error)")
+            return nil
+        }
+    }
+
+    private func applyBlur(to image: CIImage, with faces: [VNFaceObservation], orientation: AVCaptureVideoOrientation) -> CIImage {
+        var blurredImage = image
+
+        for face in faces {
+            let faceRect = face.boundingBox
+            let adjustedFaceRect = adjustFaceRect(faceRect, for: image, with: orientation)
+
+            let gaussianBlurFilter = CIFilter(name: "CIGaussianBlur")!
+            gaussianBlurFilter.setValue(image, forKey: kCIInputImageKey)
+            gaussianBlurFilter.setValue(10.0, forKey: kCIInputRadiusKey)
+            let blurredFace = gaussianBlurFilter.outputImage!.cropped(to: adjustedFaceRect)
+
+            let mask = CIImage(color: .black).cropped(to: adjustedFaceRect)
+            let maskWithBlurredFace = mask.composited(over: blurredFace)
+
+            let compositeFilter = CIFilter(name: "CISourceOverCompositing")!
+            compositeFilter.setValue(maskWithBlurredFace, forKey: kCIInputImageKey)
+            compositeFilter.setValue(blurredImage, forKey: kCIInputBackgroundImageKey)
+
+            blurredImage = compositeFilter.outputImage!.composited(over: blurredImage)
+        }
+
+        return blurredImage
+    }
+
+    private func startRecording() {
+        let outputPath = NSTemporaryDirectory() + UUID().uuidString + ".mov"
+        let outputURL = URL(fileURLWithPath: outputPath)
+
+        do {
+            assetWriter = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
+
+            let outputSettings: [String: Any] = [
+                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoWidthKey: Int(self.frame.width),
+                AVVideoHeightKey: Int(self.frame.height)
+            ]
+
+            assetWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: outputSettings)
+            assetWriterInput?.expectsMediaDataInRealTime = true
+
+            let pixelBufferAttributes: [String: Any] = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: Int(self.frame.width),
+                kCVPixelBufferHeightKey as String: Int(self.frame.height),
+                kCVPixelBufferIOSurfacePropertiesKey as String: [:]
+            ]
+
+            pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+                assetWriterInput: assetWriterInput!,
+                sourcePixelBufferAttributes: pixelBufferAttributes
+            )
+
+            assetWriter?.add(assetWriterInput!)
+            assetWriter?.startWriting()
+            assetWriter?.startSession(atSourceTime: CMTime.zero)
+
+            isRecording = true
+        } catch {
+            print("Error starting recording: \(error.localizedDescription)")
+        }
+    }
+
+    private func stopRecording(completion: @escaping (URL) -> Void) {
+        isRecording = false
+        assetWriterInput?.markAsFinished()
+        assetWriter?.finishWriting {
+            if self.assetWriter?.status == .failed {
+                print("Error finishing writing: \(self.assetWriter?.error?.localizedDescription ?? "Unknown error")")
+            } else {
+                print("Video writing completed successfully")
+            }
+        }
+    }
+
+    private func saveVideoToPhotos(videoURL: URL) {
+        PHPhotoLibrary.shared().performChanges({
+            PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: videoURL)
+        }) { saved, error in
+            if saved {
+                print("Video saved to Photos")
+            } else {
+                print("Error saving video to Photos: \(String(describing: error))")
+            }
+        }
+    }
+}
+
+extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureFileOutputRecordingDelegate {
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard isRecording else { return }
+
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+
+        let orientation = connection.videoOrientation
+
+        if let faces = detectFaces(in: ciImage) {
+            let blurredImage = applyBlur(to: ciImage, with: faces, orientation: .portrait)
+
+            DispatchQueue.main.async {
+                if let cgImage = self.ciContext.createCGImage(blurredImage, from: blurredImage.extent) {
+                    self.blurOverlayLayer?.contents = cgImage
+                }
+            }
+
+            if let writer = assetWriter, writer.status == .writing {
+                var newPixelBuffer: CVPixelBuffer?
+                CVPixelBufferPoolCreatePixelBuffer(nil, pixelBufferAdaptor!.pixelBufferPool!, &newPixelBuffer)
+                ciContext.render(blurredImage, to: newPixelBuffer!)
+
+                let currentTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                pixelBufferAdaptor?.append(newPixelBuffer!, withPresentationTime: currentTime)
+            }
+        }
+    }
+
+    private func adjustFaceRect(_ faceRect: CGRect, for image: CIImage, with orientation: AVCaptureVideoOrientation) -> CGRect {
+        var adjustedRect = faceRect
+        switch orientation {
+        case .portrait:
+            // No changes needed
+            adjustedRect = CGRect(
+                x: faceRect.origin.x * image.extent.width,
+                y: (1 - faceRect.origin.y - faceRect.height) * image.extent.height,
+                width: faceRect.width * image.extent.width,
+                height: faceRect.height * image.extent.height
+            )
+        case .landscapeRight:
+            adjustedRect = CGRect(
+                x: faceRect.origin.y * image.extent.width,
+                y: faceRect.origin.x * image.extent.height,
+                width: faceRect.height * image.extent.width,
+                height: faceRect.width * image.extent.height
+            )
+        case .landscapeLeft:
+            adjustedRect = CGRect(
+                x: (1 - faceRect.origin.y - faceRect.height) * image.extent.width,
+                y: (1 - faceRect.origin.x - faceRect.width) * image.extent.height,
+                width: faceRect.height * image.extent.width,
+                height: faceRect.width * image.extent.height
+            )
+        case .portraitUpsideDown:
+            adjustedRect = CGRect(
+                x: (1 - faceRect.origin.x - faceRect.width) * image.extent.width,
+                y: faceRect.origin.y * image.extent.height,
+                width: faceRect.width * image.extent.width,
+                height: faceRect.height * image.extent.height
+            )
+        @unknown default:
+            break
+        }
+        return adjustedRect
+    }
+
+    func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
+        if let error = error {
+            print("Error recording movie: \(error.localizedDescription)")
+        } else {
+            print("Movie recorded successfully.")
+        }
+    }
+}

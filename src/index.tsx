@@ -12,11 +12,11 @@ const LINKING_ERROR =
   '- You are not using Expo Go\n';
 
 type RnFaceBlurProps = {
-  color: string;
-  style: ViewStyle;
+  ref?: any;
+  style?: ViewStyle;
 };
 
-const ComponentName = 'RnFaceBlurView';
+export const ComponentName = 'RnFaceBlurView';
 
 export const RnFaceBlur =
   UIManager.getViewManagerConfig(ComponentName) != null

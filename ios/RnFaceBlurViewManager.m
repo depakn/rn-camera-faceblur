@@ -2,6 +2,8 @@
 
 @interface RCT_EXTERN_MODULE(RnFaceBlurViewManager, RCTViewManager)
 
-RCT_EXPORT_VIEW_PROPERTY(color, NSString)
+RCT_EXTERN_METHOD(startCamera:(nonnull NSNumber *)node)
+RCT_EXTERN_METHOD(stopCamera:(nonnull NSNumber *)node)
+RCT_EXTERN_METHOD(flipCamera:(nonnull NSNumber *)node)
 
 @end
