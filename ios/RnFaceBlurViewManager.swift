@@ -57,9 +57,12 @@ class RnFaceBlurView: UIView {
   private var assetWriter: AVAssetWriter?
   private var assetWriterInput: AVAssetWriterInput?
   private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+  private var videoOrientation: AVCaptureVideoOrientation = .portrait
 
   private var videoOutputURL: URL?
   private var startTime: CMTime?
+
+  private var faceObservations: [VNFaceObservation] = []
 
   // Save Variables
   private var isRecording = false
@@ -124,6 +127,16 @@ class RnFaceBlurView: UIView {
     addCameraInput()
     showCameraFeed()
     getCameraFrames()
+    setVideoOrientation()
+  }
+
+  private func setVideoOrientation() {
+    if let connection = videoDataOutput.connection(with: .video) {
+      if connection.isVideoOrientationSupported {
+        connection.videoOrientation = .portrait
+        videoOrientation = .portrait
+      }
+    }
   }
 
   override func layoutSubviews() {
@@ -189,12 +202,15 @@ class RnFaceBlurView: UIView {
 
         let videoSettings: [String: Any] = [
           AVVideoCodecKey: AVVideoCodecType.h264,
-          AVVideoWidthKey: NSNumber(value: Float(self.bounds.width)),
-          AVVideoHeightKey: NSNumber(value: Float(self.bounds.height)),
+          AVVideoWidthKey: NSNumber(value: Float(self.bounds.height)),  // Swap width and height
+          AVVideoHeightKey: NSNumber(value: Float(self.bounds.width)),
         ]
 
         assetWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         assetWriterInput?.expectsMediaDataInRealTime = true
+
+        // Set the transform on the asset writer input
+        assetWriterInput?.transform = videoOrientationTransform()
 
         let sourcePixelBufferAttributes: [String: Any] = [
           kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_32ARGB),
@@ -230,6 +246,25 @@ class RnFaceBlurView: UIView {
     }
   }
 
+  private func videoOrientationTransform() -> CGAffineTransform {
+    var transform = CGAffineTransform.identity
+
+    switch videoOrientation {
+    case .portrait:
+      transform = CGAffineTransform(rotationAngle: .pi / 2)
+    case .portraitUpsideDown:
+      transform = CGAffineTransform(rotationAngle: -.pi / 2)
+    case .landscapeRight:
+      transform = CGAffineTransform(rotationAngle: .pi)
+    case .landscapeLeft:
+      transform = CGAffineTransform.identity
+    @unknown default:
+      break
+    }
+
+    return transform
+  }
+
   private func detectFace(image: CVPixelBuffer) {
     let faceDetectionRequest = VNDetectFaceLandmarksRequest { vnRequest, error in
       DispatchQueue.main.async {
@@ -248,6 +283,7 @@ class RnFaceBlurView: UIView {
 
   private func handleFaceDetectionResults(observedFaces: [VNFaceObservation]) {
     clearDrawings()
+    faceObservations = observedFaces
 
     let facesBoundingBoxes: [CAShapeLayer] = observedFaces.map { observedFace in
       let faceBoundingBoxOnScreen = previewLayer.layerRectConverted(
@@ -305,18 +341,47 @@ extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate {
       assetWriter.startSession(atSourceTime: presentationTime)
     }
 
-    // Create an image context and draw the overlay
-    UIGraphicsBeginImageContextWithOptions(self.bounds.size, false, 0.0)
-    let context = UIGraphicsGetCurrentContext()!
+    guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+      return
+    }
+
+    let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+    let context = CIContext()
+    guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+      return
+    }
+
+    let imageSize = CGSize(
+      width: CGFloat(CVPixelBufferGetWidth(pixelBuffer)),
+      height: CGFloat(CVPixelBufferGetHeight(pixelBuffer)))
+
+    UIGraphicsBeginImageContextWithOptions(imageSize, false, 1.0)
+    let graphicsContext = UIGraphicsGetCurrentContext()!
 
     // Draw the video frame
-    let ciImage = CIImage(cvPixelBuffer: CMSampleBufferGetImageBuffer(sampleBuffer)!)
-    let cgImage = CIContext().createCGImage(ciImage, from: ciImage.extent)!
-    context.draw(cgImage, in: self.bounds)
+    graphicsContext.translateBy(x: imageSize.width / 2, y: imageSize.height / 2)
+    graphicsContext.rotate(by: .pi / 2)
+    graphicsContext.translateBy(x: -imageSize.height / 2, y: -imageSize.width / 2)
+    graphicsContext.draw(
+      cgImage,
+      in: CGRect(origin: .zero, size: CGSize(width: imageSize.height, height: imageSize.width)))
 
-    // Draw the face detection overlay
-    for drawing in drawings {
-      drawing.render(in: context)
+    // Reset the transform for drawing overlays
+    graphicsContext.resetClip()
+
+    // Draw face detection overlays
+    for observation in faceObservations {
+      let boundingBox = VNImageRectForNormalizedRect(
+        observation.boundingBox, Int(imageSize.width), Int(imageSize.height))
+      let rotatedRect = CGRect(
+        x: imageSize.height - boundingBox.maxY,
+        y: boundingBox.minX,
+        width: boundingBox.height,
+        height: boundingBox.width)
+
+      graphicsContext.setStrokeColor(UIColor.green.cgColor)
+      graphicsContext.setLineWidth(2.0)
+      graphicsContext.stroke(rotatedRect)
     }
 
     let overlayImage = UIGraphicsGetImageFromCurrentImageContext()
