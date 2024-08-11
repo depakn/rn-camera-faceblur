@@ -373,9 +373,11 @@ extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate {
     for observation in faceObservations {
       let boundingBox = VNImageRectForNormalizedRect(
         observation.boundingBox, Int(imageSize.width), Int(imageSize.height))
+
+      // Adjust the coordinates to correct the vertical flip
       let rotatedRect = CGRect(
         x: imageSize.height - boundingBox.maxY,
-        y: boundingBox.minX,
+        y: imageSize.width - boundingBox.maxX,  // Change this line
         width: boundingBox.height,
         height: boundingBox.width)
 
