@@ -6,6 +6,8 @@ import androidx.camera.core.ImageProxy
 import com.google.mlkit.vision.face.Face
 import android.view.Surface
 import java.io.ByteArrayOutputStream
+import kotlin.math.max
+import kotlin.math.min
 
 class VideoProcessor(private val width: Int, private val height: Int) {
   private val paint = Paint().apply {
@@ -17,7 +19,7 @@ class VideoProcessor(private val width: Int, private val height: Int) {
   fun processFrame(image: ImageProxy, faces: List<Face>): Bitmap {
     val bitmap = image.toBitmap()
     val rotatedBitmap = rotateImage(bitmap, -90f)
-    val canvas = Canvas(rotatedBitmap)
+    val mutableBitmap = rotatedBitmap.copy(Bitmap.Config.ARGB_8888, true)
 
     val scaleX = rotatedBitmap.width.toFloat() / image.width.toFloat()
     val scaleY = rotatedBitmap.height.toFloat() / image.height.toFloat()
@@ -25,17 +27,66 @@ class VideoProcessor(private val width: Int, private val height: Int) {
     faces.forEach { face ->
       val bounds = face.boundingBox
 
-      val left = bounds.left.toFloat() // Dont change
-      val top = bounds.top * scaleY // Dont change
-      val right = bounds.right.toFloat() + bounds.left.toFloat() // Needs change
-      val bottom = bounds.bottom.toFloat() +bounds.top.toFloat() // Needs change
+      val left = bounds.left.toFloat()
+      val top = bounds.top * scaleY
+      val right = bounds.right.toFloat() + bounds.left.toFloat()
+      val bottom = bounds.bottom.toFloat() + bounds.top.toFloat()
 
-      canvas.drawRect(left, top, right, bottom, paint)
+      // Create a new bitmap for the face region
+      val faceBitmap = Bitmap.createBitmap(
+        mutableBitmap,
+        left.toInt(),
+        top.toInt(),
+        (right - left).toInt(),
+        (bottom - top).toInt()
+      )
 
-      Log.d("VideoProcessor: ", "bl: ${rotatedBitmap.width}, br: ${bounds.right}")
+      // Blur the face bitmap
+      val blurredFaceBitmap = blurBitmap(faceBitmap, 10)
+
+      // Draw the blurred face back onto the original bitmap
+      val canvas = Canvas(mutableBitmap)
+      canvas.drawBitmap(blurredFaceBitmap, left, top, null)
+
+      Log.d("VideoProcessor", "bl: ${rotatedBitmap.width}, br: ${bounds.right}")
     }
 
-    return rotatedBitmap
+    return mutableBitmap
+  }
+
+  private fun blurBitmap(source: Bitmap, radius: Int): Bitmap {
+    val width = source.width
+    val height = source.height
+    val pixels = IntArray(width * height)
+    source.getPixels(pixels, 0, width, 0, 0, width, height)
+
+    val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+
+    for (y in 0 until height) {
+      for (x in 0 until width) {
+        var redSum = 0
+        var greenSum = 0
+        var blueSum = 0
+        var count = 0
+
+        for (ky in -radius..radius) {
+          for (kx in -radius..radius) {
+            val px = min(max(x + kx, 0), width - 1)
+            val py = min(max(y + ky, 0), height - 1)
+            val color = pixels[py * width + px]
+            redSum += Color.red(color)
+            greenSum += Color.green(color)
+            blueSum += Color.blue(color)
+            count++
+          }
+        }
+
+        val averageColor = Color.rgb(redSum / count, greenSum / count, blueSum / count)
+        output.setPixel(x, y, averageColor)
+      }
+    }
+
+    return output
   }
 
   fun drawToSurface(bitmap: Bitmap, surface: Surface?) {
