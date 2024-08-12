@@ -49,52 +49,57 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
   private lateinit var frameLayout: FrameLayout
   private lateinit var previewView: PreviewView
   private lateinit var textureView: TextureView
+  private lateinit var overlay: Overlay
 
   override fun getName() = "RnFaceBlurView"
 
   override fun createViewInstance(reactContext: ThemedReactContext): FrameLayout {
     frameLayout = FrameLayout(reactContext)
+
+    previewView = PreviewView(reactContext)
+    previewView.layoutParams = ViewGroup.LayoutParams(
+      ViewGroup.LayoutParams.MATCH_PARENT,
+      ViewGroup.LayoutParams.MATCH_PARENT
+    )
+
     textureView = TextureView(reactContext)
-    textureView.layoutParams =
-      ViewGroup.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.MATCH_PARENT
-      )
+    textureView.layoutParams = ViewGroup.LayoutParams(
+      ViewGroup.LayoutParams.MATCH_PARENT,
+      ViewGroup.LayoutParams.MATCH_PARENT
+    )
+
+    overlay = Overlay(reactContext)
+    val layoutOverlay = ViewGroup.LayoutParams(
+      ViewGroup.LayoutParams.MATCH_PARENT,
+      ViewGroup.LayoutParams.MATCH_PARENT
+    )
+
     frameLayout.addView(textureView)
+    frameLayout.addView(overlay, layoutOverlay)
+
     cameraExecutor = Executors.newSingleThreadExecutor()
-    cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+    cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
 
-    // Set SurfaceTextureListener to the TextureView
-    textureView.surfaceTextureListener =
-      object : TextureView.SurfaceTextureListener {
-        override fun onSurfaceTextureAvailable(
-          surface: SurfaceTexture,
-          width: Int,
-          height: Int
-        ) {
-          // Surface is available, start the camera
-          startCameraWithPermissionCheck()
-        }
-
-        override fun onSurfaceTextureSizeChanged(
-          surface: SurfaceTexture,
-          width: Int,
-          height: Int
-        ) {
-          // Handle size changes if needed
-        }
-
-        override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-          // Clean up when the SurfaceTexture is destroyed
-          stopCamera()
-          cameraProvider.unbindAll()
-          return true
-        }
-
-        override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
-          // Handle texture updates if needed
-        }
+    textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+      override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+        startCameraWithPermissionCheck()
       }
+
+      override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+        // Handle size changes if needed
+      }
+
+      override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+        stopCamera()
+        cameraProvider.unbindAll()
+        return true
+      }
+
+      override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
+        // Handle texture updates if needed
+      }
+    }
+
     return frameLayout
   }
 
@@ -131,40 +136,60 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
 
   private fun startCamera() {
     val cameraProviderFuture = ProcessCameraProvider.getInstance(reactContext)
-    cameraProviderFuture.addListener(
-      {
-        try {
-          cameraProvider = cameraProviderFuture.get()
-          preview = Preview.Builder().build()
+    cameraProviderFuture.addListener({
+      try {
+        cameraProvider = cameraProviderFuture.get()
+        bindCameraUseCases()
+      } catch (e: Exception) {
+        Log.e("CustomError:", "Use case binding failed", e)
+      }
+    }, ContextCompat.getMainExecutor(reactContext))
+  }
 
-          val surfaceTexture = textureView.surfaceTexture
-          val surface = Surface(surfaceTexture)
+  private fun bindCameraUseCases() {
+    val cameraProvider = cameraProvider ?: throw IllegalStateException("Camera initialization failed.")
 
-          preview.setSurfaceProvider { request ->
-            request.provideSurface(surface, cameraExecutor) { result ->
-              // Handle surface results if needed
-            }
-          }
+    val lifecycleOwner = reactContext.currentActivity as? LifecycleOwner
+      ?: throw IllegalStateException("Invalid LifecycleOwner")
 
-          val recorder =
-            Recorder.Builder()
-              .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
-              .build()
-          videoCapture = VideoCapture.withOutput(recorder)
-          cameraProvider.unbindAll()
-          camera =
-            cameraProvider.bindToLifecycle(
-              reactContext.currentActivity as LifecycleOwner,
-              cameraSelector,
-              preview,
-              videoCapture
-            )
-        } catch (e: Exception) {
-          e.printStackTrace()
-        }
-      },
-      ContextCompat.getMainExecutor(reactContext)
-    )
+    preview = Preview.Builder().build()
+
+    val surfaceProvider = Preview.SurfaceProvider { request ->
+      val texture = textureView.surfaceTexture
+      val surface = Surface(texture)
+      request.provideSurface(surface, ContextCompat.getMainExecutor(reactContext)) { }
+    }
+
+    preview.setSurfaceProvider(surfaceProvider)
+
+    val recorder = Recorder.Builder()
+      .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
+      .build()
+    videoCapture = VideoCapture.withOutput(recorder)
+
+    val imageAnalyzer = ImageAnalysis.Builder()
+      .build()
+      .also {
+        it.setAnalyzer(cameraExecutor, FaceAnalyzer(lifecycleOwner.lifecycle, overlay))
+      }
+
+    try {
+      cameraProvider.unbindAll()
+      camera = cameraProvider.bindToLifecycle(
+        lifecycleOwner,
+        cameraSelector,
+        preview,
+        videoCapture,
+        imageAnalyzer
+      )
+
+      // Update the overlay with the correct orientation and camera facing
+      overlay.setOrientation(reactContext.resources.configuration.orientation)
+      overlay.setIsFrontFacing(cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA)
+
+    } catch (exc: Exception) {
+      Log.e("CustomError:", "Use case binding failed", exc)
+    }
   }
 
   private fun stopCamera() {
