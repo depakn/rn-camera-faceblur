@@ -2,12 +2,11 @@ package com.fortisinnovationlabs.rnfaceblur
 
 import android.Manifest
 import android.app.Activity
-import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import android.graphics.SurfaceTexture
-import android.os.Build
-import android.provider.MediaStore
 import android.util.Log
 import android.view.Surface
 import android.view.TextureView
@@ -27,10 +26,11 @@ import com.facebook.react.common.MapBuilder
 import com.facebook.react.uimanager.SimpleViewManager
 import com.facebook.react.uimanager.ThemedReactContext
 import com.facebook.react.uimanager.annotations.ReactProp
-import java.text.SimpleDateFormat
-import java.util.*
+import com.google.mlkit.vision.face.Face
+import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 private val CAMERA_REQUEST_CODE = 1001
 private val REQUIRED_PERMISSIONS =
@@ -41,15 +41,21 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
 
   private lateinit var cameraExecutor: ExecutorService
   private var camera: Camera? = null
-  private var videoCapture: VideoCapture<Recorder>? = null
-  private var recording: Recording? = null
   private lateinit var preview: Preview
-  private lateinit var cameraSelector: CameraSelector
+  private lateinit var previewView: PreviewView
+  private var cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
   private lateinit var cameraProvider: ProcessCameraProvider
   private lateinit var frameLayout: FrameLayout
-  private lateinit var previewView: PreviewView
   private lateinit var textureView: TextureView
   private lateinit var overlay: Overlay
+  private lateinit var videoProcessor: VideoProcessor
+  private var latestFaces: List<Face> = emptyList()
+  private var videoEncoder: VideoEncoder? = null
+  private var isRecording = AtomicBoolean(false)
+  private var frameProcessor: ImageAnalysis? = null
+  private var faceAnalyzer: ImageAnalysis? = null
+  private val mainHandler = Handler(Looper.getMainLooper())
+  private var outputFile: File? = null
 
   override fun getName() = "RnFaceBlurView"
 
@@ -162,15 +168,36 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
 
     preview.setSurfaceProvider(surfaceProvider)
 
-    val recorder = Recorder.Builder()
-      .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
-      .build()
-    videoCapture = VideoCapture.withOutput(recorder)
+    videoProcessor = VideoProcessor(textureView.width, textureView.height)
 
-    val imageAnalyzer = ImageAnalysis.Builder()
+    faceAnalyzer = ImageAnalysis.Builder()
+      .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
       .build()
       .also {
-        it.setAnalyzer(cameraExecutor, FaceAnalyzer(lifecycleOwner.lifecycle, overlay))
+        it.setAnalyzer(cameraExecutor, FaceAnalyzer(lifecycleOwner.lifecycle, overlay) { faces ->
+          latestFaces = faces
+        })
+      }
+
+    frameProcessor = ImageAnalysis.Builder()
+      .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+      .build()
+      .also {
+        it.setAnalyzer(cameraExecutor, ImageAnalysis.Analyzer { imageProxy ->
+          if (isRecording.get()) {
+            try {
+              val processedFrame = videoProcessor.processFrame(imageProxy, latestFaces)
+              // Instead of encoding here, we'll draw to the inputSurface
+              // This part needs to be implemented in the VideoProcessor
+              videoProcessor.drawToSurface(processedFrame, videoEncoder?.inputSurface)
+              videoEncoder?.drainEncoder(false)
+              Log.d("RnFaceBlurViewManager", "Frame processed and drawn to encoder surface")
+            } catch (e: Exception) {
+              Log.e("RnFaceBlurViewManager", "Error processing frame: ${e.message}")
+            }
+          }
+          imageProxy.close()
+        })
       }
 
     try {
@@ -179,22 +206,16 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
         lifecycleOwner,
         cameraSelector,
         preview,
-        videoCapture,
-        imageAnalyzer
+        faceAnalyzer,
+        frameProcessor
       )
 
-      // Update the overlay with the correct orientation and camera facing
       overlay.setOrientation(reactContext.resources.configuration.orientation)
       overlay.setIsFrontFacing(cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA)
 
     } catch (exc: Exception) {
-      Log.e("CustomError:", "Use case binding failed", exc)
+      Log.e("RnFaceBlurViewManager", "Use case binding failed", exc)
     }
-  }
-
-  private fun stopCamera() {
-    recording?.stop()
-    recording = null
   }
 
   private fun flipCamera() {
@@ -208,54 +229,65 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
   }
 
   private fun startRecording() {
-    val videoCapture = this.videoCapture ?: return
-
-    val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.getDefault())
-      .format(System.currentTimeMillis())
-    val contentValues = ContentValues().apply {
-      put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-      put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-      if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
-        put(MediaStore.Video.Media.RELATIVE_PATH, "DCIM/Camera")
-      }
+    Log.d("RnFaceBlurViewManager", "startRecording called")
+    if (!isRecording.getAndSet(true)) {
+      outputFile = File(reactContext.getExternalFilesDir(null), "processed_video.mp4")
+      videoEncoder = VideoEncoder(textureView.width, textureView.height, outputFile!!)
+      Log.d("RnFaceBlurViewManager", "Recording started. Output file: ${outputFile?.absolutePath}")
+    } else {
+      Log.d("RnFaceBlurViewManager", "Recording was already in progress")
     }
+  }
 
-    val mediaStoreOutputOptions = MediaStoreOutputOptions.Builder(
-      reactContext.contentResolver,
-      MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-    )
-      .setContentValues(contentValues)
-      .build()
+  private fun stopRecording() {
+    Log.d("RnFaceBlurViewManager", "stopRecording called")
+    if (isRecording.getAndSet(false)) {
+      // Add a delay to ensure all frames are processed
+      mainHandler.postDelayed({
+        try {
+          videoEncoder?.stop()
+          Log.d("RnFaceBlurViewManager", "Video encoder stopped")
 
-    recording = videoCapture.output
-      .prepareRecording(reactContext, mediaStoreOutputOptions)
-      .apply {
-        if (ContextCompat.checkSelfPermission(
-            reactContext,
-            Manifest.permission.RECORD_AUDIO
-          ) == PackageManager.PERMISSION_GRANTED
-        ) {
-          withAudioEnabled()
-        }
-      }
-      .start(ContextCompat.getMainExecutor(reactContext)) { recordEvent ->
-        when (recordEvent) {
-          is VideoRecordEvent.Start -> {
-            // Handle start of recording
-          }
-          is VideoRecordEvent.Finalize -> {
-            if (!recordEvent.hasError()) {
-              // Video capture succeeded and saved to gallery
-              Log.d("RnFaceBlurViewManager", "Video capture succeeded: ${recordEvent.outputResults.outputUri}")
+          // Check if the file was created and has content
+          outputFile?.let { file ->
+            if (file.exists() && file.length() > 0) {
+              Log.d("RnFaceBlurViewManager", "Video file created successfully: ${file.absolutePath}")
+              Log.d("RnFaceBlurViewManager", "Video file size: ${file.length()} bytes")
             } else {
-              // Video capture failed
-              Log.e("RnFaceBlurViewManager", "Video capture failed: ${recordEvent.error}")
-              recording?.close()
-              recording = null
+              Log.e("RnFaceBlurViewManager", "Video file was not created or is empty: ${file.absolutePath}")
             }
           }
+        } catch (e: Exception) {
+          Log.e("RnFaceBlurViewManager", "Error stopping video encoder: ${e.message}")
+          e.printStackTrace()
+        } finally {
+          videoEncoder = null
+          outputFile = null
         }
-      }
+        Log.d("RnFaceBlurViewManager", "Recording stopped")
+      }, 1000) // 1 second delay
+    } else {
+      Log.d("RnFaceBlurViewManager", "Recording was not in progress")
+    }
+  }
+
+  private fun stopCamera() {
+    Log.d("RnFaceBlurViewManager", "stopCamera called")
+    try {
+      stopRecording()
+      frameProcessor?.clearAnalyzer()
+      faceAnalyzer?.clearAnalyzer()
+      camera?.cameraControl?.enableTorch(false)
+      camera = null
+      cameraProvider.unbindAll()
+      cameraExecutor.shutdown()
+      Log.d("RnFaceBlurViewManager", "Camera stopped and resources released")
+    } catch (exc: Exception) {
+      Log.e("RnFaceBlurViewManager", "Error stopping camera: ${exc.message}")
+    } finally {
+      frameProcessor = null
+      faceAnalyzer = null
+    }
   }
 
   override fun getCommandsMap(): Map<String, Int> {
@@ -282,9 +314,14 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
       COMMAND_START_RECORDING -> {
         startRecording()
       }
-      COMMAND_STOP_RECORDING -> stopCamera()
+      COMMAND_STOP_RECORDING -> stopRecording()
       COMMAND_FLIP_CAMERA -> flipCamera()
     }
+  }
+
+  override fun onDropViewInstance(view: FrameLayout) {
+    super.onDropViewInstance(view)
+    stopCamera()
   }
 
   companion object {

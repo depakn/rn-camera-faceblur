@@ -15,7 +15,7 @@ import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 
-class FaceAnalyzer(lifecycle: Lifecycle, private val overlay: Overlay) : ImageAnalysis.Analyzer, LifecycleObserver {
+class FaceAnalyzer(lifecycle: Lifecycle, private val overlay: Overlay, private val onFacesDetected: (List<Face>) -> Unit) : ImageAnalysis.Analyzer, LifecycleObserver {
   private val options = FaceDetectorOptions.Builder()
     .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
     .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
@@ -37,6 +37,7 @@ class FaceAnalyzer(lifecycle: Lifecycle, private val overlay: Overlay) : ImageAn
   private val successListener = OnSuccessListener<List<Face>> { faces ->
     Log.d(TAG, "Number of face detected: " + faces.size)
     overlay.setFaces(faces)
+    onFacesDetected(faces)
   }
 
   private val failureListener = OnFailureListener { e ->
