@@ -12,6 +12,6 @@ class RnFaceBlurPackage : ReactPackage {
   }
 
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
-    return listOf(RnFaceBlurViewManager())
+    return listOf(RnFaceBlurViewManager(reactContext))
   }
 }

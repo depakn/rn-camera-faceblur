@@ -12,6 +12,7 @@ const LINKING_ERROR =
   '- You are not using Expo Go\n';
 
 type RnFaceBlurProps = {
+  color?: string;
   ref?: any;
   style?: ViewStyle;
 };

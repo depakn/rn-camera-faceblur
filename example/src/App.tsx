@@ -13,21 +13,28 @@ export default function App() {
 
   const sendCommand = (commandName: string) => {
     const nodeHandle = findNodeHandle(faceBlurRef.current);
-    UIManager.dispatchViewManagerCommand(
-      nodeHandle,
-      (UIManager.getViewManagerConfig('RnFaceBlurView') as any).Commands[
-        commandName
-      ],
-      []
-    );
+    if (nodeHandle) {
+      UIManager.dispatchViewManagerCommand(
+        nodeHandle,
+        (UIManager.getViewManagerConfig('RnFaceBlurView') as any).Commands[
+          commandName
+        ],
+        []
+      );
+    }
   };
 
   return (
     <View style={styles.container}>
-      <RnFaceBlur ref={faceBlurRef} style={styles.box} />
-      <Button title="Start Camera" onPress={() => sendCommand('startCamera')} />
-      <Button title="Stop Camera" onPress={() => sendCommand('stopCamera')} />
-      <Button title="Flip Camera" onPress={() => sendCommand('flipCamera')} />
+      <RnFaceBlur ref={faceBlurRef} style={styles.box} color="#525860" />
+      <View style={styles.actionContainer}>
+        <Button
+          title="Start Camera"
+          onPress={() => sendCommand('startCamera')}
+        />
+        <Button title="Stop Camera" onPress={() => sendCommand('stopCamera')} />
+        <Button title="Flip Camera" onPress={() => sendCommand('flipCamera')} />
+      </View>
     </View>
   );
 }
@@ -39,8 +46,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   box: {
-    width: 300,
-    height: 500,
+    width: '100%',
+    height: '100%',
     marginVertical: 20,
+  },
+  actionContainer: {
+    gap: 4,
+    position: 'absolute',
+    bottom: 25,
   },
 });
