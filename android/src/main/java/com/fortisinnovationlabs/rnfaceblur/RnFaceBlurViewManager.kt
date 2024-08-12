@@ -3,11 +3,13 @@ package com.fortisinnovationlabs.rnfaceblur
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.graphics.SurfaceTexture
 import android.util.Log
+import android.util.Size
 import android.view.Surface
 import android.view.TextureView
 import android.view.ViewGroup
@@ -168,6 +170,7 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
 
     preview.setSurfaceProvider(surfaceProvider)
 
+    val previewSize = Size(textureView.width, textureView.height)
     videoProcessor = VideoProcessor(textureView.width, textureView.height)
 
     faceAnalyzer = ImageAnalysis.Builder()
@@ -180,15 +183,13 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
       }
 
     frameProcessor = ImageAnalysis.Builder()
-      .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+      .setTargetAspectRatio(AspectRatio.RATIO_16_9)
       .build()
       .also {
         it.setAnalyzer(cameraExecutor, ImageAnalysis.Analyzer { imageProxy ->
           if (isRecording.get()) {
             try {
               val processedFrame = videoProcessor.processFrame(imageProxy, latestFaces)
-              // Instead of encoding here, we'll draw to the inputSurface
-              // This part needs to be implemented in the VideoProcessor
               videoProcessor.drawToSurface(processedFrame, videoEncoder?.inputSurface)
               videoEncoder?.drainEncoder(false)
               Log.d("RnFaceBlurViewManager", "Frame processed and drawn to encoder surface")
@@ -232,7 +233,7 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
     Log.d("RnFaceBlurViewManager", "startRecording called")
     if (!isRecording.getAndSet(true)) {
       outputFile = File(reactContext.getExternalFilesDir(null), "processed_video.mp4")
-      videoEncoder = VideoEncoder(textureView.width, textureView.height, outputFile!!)
+      videoEncoder = VideoEncoder(textureView.width, textureView.height, outputFile!!)  // Use fixed dimensions
       Log.d("RnFaceBlurViewManager", "Recording started. Output file: ${outputFile?.absolutePath}")
     } else {
       Log.d("RnFaceBlurViewManager", "Recording was already in progress")

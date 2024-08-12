@@ -24,10 +24,10 @@ class VideoEncoder(
   val inputSurface: Surface
 
   init {
-    Log.d("VideoEncoder", "Initializing VideoEncoder")
+    Log.d("VideoEncoder", "Initializing VideoEncoder with width: $width, height: $height")
     val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
     format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-    format.setInteger(MediaFormat.KEY_BIT_RATE, 6000000)
+    format.setInteger(MediaFormat.KEY_BIT_RATE, 10000000)
     format.setInteger(MediaFormat.KEY_FRAME_RATE, 30)
     format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
 
@@ -37,7 +37,6 @@ class VideoEncoder(
 
     muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
     encoder.start()
-    Log.d("VideoEncoder", "VideoEncoder initialized")
   }
 
   fun drainEncoder(endOfStream: Boolean) {
