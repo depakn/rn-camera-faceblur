@@ -1,21 +1,101 @@
 package com.fortisinnovationlabs.rnfaceblur
 
+import android.Manifest
+import android.app.Activity
+import android.content.ContentValues
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.SurfaceTexture
+import android.os.Build
+import android.provider.MediaStore
 import android.util.Log
+import android.view.Surface
+import android.view.TextureView
+import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.camera.core.*
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.*
+import androidx.camera.video.VideoCapture
+import androidx.camera.view.PreviewView
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReadableArray
+import com.facebook.react.common.MapBuilder
+import com.facebook.react.uimanager.SimpleViewManager
 import com.facebook.react.uimanager.ThemedReactContext
-import com.facebook.react.uimanager.ViewGroupManager
 import com.facebook.react.uimanager.annotations.ReactProp
+import java.text.SimpleDateFormat
+import java.util.*
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+
+private val CAMERA_REQUEST_CODE = 1001
+private val REQUIRED_PERMISSIONS =
+  arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
 
 class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
-        ViewGroupManager<FrameLayout>() {
+  SimpleViewManager<FrameLayout>() {
 
-  override fun getName() = REACT_CLASS
+  private lateinit var cameraExecutor: ExecutorService
+  private var camera: Camera? = null
+  private var videoCapture: VideoCapture<Recorder>? = null
+  private var recording: Recording? = null
+  private lateinit var preview: Preview
+  private lateinit var cameraSelector: CameraSelector
+  private lateinit var cameraProvider: ProcessCameraProvider
+  private lateinit var frameLayout: FrameLayout
+  private lateinit var previewView: PreviewView
+  private lateinit var textureView: TextureView
 
-  override fun createViewInstance(p0: ThemedReactContext): FrameLayout {
-    return FrameLayout(reactContext)
+  override fun getName() = "RnFaceBlurView"
+
+  override fun createViewInstance(reactContext: ThemedReactContext): FrameLayout {
+    frameLayout = FrameLayout(reactContext)
+    textureView = TextureView(reactContext)
+    textureView.layoutParams =
+      ViewGroup.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.MATCH_PARENT
+      )
+    frameLayout.addView(textureView)
+    cameraExecutor = Executors.newSingleThreadExecutor()
+    cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+    // Set SurfaceTextureListener to the TextureView
+    textureView.surfaceTextureListener =
+      object : TextureView.SurfaceTextureListener {
+        override fun onSurfaceTextureAvailable(
+          surface: SurfaceTexture,
+          width: Int,
+          height: Int
+        ) {
+          // Surface is available, start the camera
+          startCameraWithPermissionCheck()
+        }
+
+        override fun onSurfaceTextureSizeChanged(
+          surface: SurfaceTexture,
+          width: Int,
+          height: Int
+        ) {
+          // Handle size changes if needed
+        }
+
+        override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+          // Clean up when the SurfaceTexture is destroyed
+          stopCamera()
+          cameraProvider.unbindAll()
+          return true
+        }
+
+        override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
+          // Handle texture updates if needed
+        }
+      }
+    return frameLayout
   }
 
   @ReactProp(name = "color")
@@ -23,38 +103,168 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
     color?.let { view.setBackgroundColor(Color.parseColor(it)) }
   }
 
+  private fun checkPermissions(): Boolean {
+    val permissions = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+    return permissions.all {
+      ContextCompat.checkSelfPermission(reactContext, it) == PackageManager.PERMISSION_GRANTED
+    }
+  }
+
+  private fun startCameraWithPermissionCheck() {
+    if (checkPermissions()) {
+      startCamera()
+    } else {
+      // Handle permission request or inform the user
+      Log.e("RnFaceBlurViewManager", "Permissions for camera and audio are not granted.")
+      requestPermissions()
+    }
+  }
+
+  private fun requestPermissions() {
+    val activity = reactContext.currentActivity as? Activity
+    if (activity != null) {
+      ActivityCompat.requestPermissions(activity, REQUIRED_PERMISSIONS, CAMERA_REQUEST_CODE)
+    } else {
+      Log.e("RnFaceBlurViewManager", "Activity is null, cannot request permissions.")
+    }
+  }
+
+  private fun startCamera() {
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(reactContext)
+    cameraProviderFuture.addListener(
+      {
+        try {
+          cameraProvider = cameraProviderFuture.get()
+          preview = Preview.Builder().build()
+
+          val surfaceTexture = textureView.surfaceTexture
+          val surface = Surface(surfaceTexture)
+
+          preview.setSurfaceProvider { request ->
+            request.provideSurface(surface, cameraExecutor) { result ->
+              // Handle surface results if needed
+            }
+          }
+
+          val recorder =
+            Recorder.Builder()
+              .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
+              .build()
+          videoCapture = VideoCapture.withOutput(recorder)
+          cameraProvider.unbindAll()
+          camera =
+            cameraProvider.bindToLifecycle(
+              reactContext.currentActivity as LifecycleOwner,
+              cameraSelector,
+              preview,
+              videoCapture
+            )
+        } catch (e: Exception) {
+          e.printStackTrace()
+        }
+      },
+      ContextCompat.getMainExecutor(reactContext)
+    )
+  }
+
+  private fun stopCamera() {
+    recording?.stop()
+    recording = null
+  }
+
+  private fun flipCamera() {
+    cameraSelector =
+      if (cameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
+        CameraSelector.DEFAULT_FRONT_CAMERA
+      } else {
+        CameraSelector.DEFAULT_BACK_CAMERA
+      }
+    startCameraWithPermissionCheck()
+  }
+
+  private fun startRecording() {
+    val videoCapture = this.videoCapture ?: return
+
+    val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.getDefault())
+      .format(System.currentTimeMillis())
+    val contentValues = ContentValues().apply {
+      put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+      put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+      if (Build.VERSION.SDK_INT > Build.VERSION_CODES.P) {
+        put(MediaStore.Video.Media.RELATIVE_PATH, "DCIM/Camera")
+      }
+    }
+
+    val mediaStoreOutputOptions = MediaStoreOutputOptions.Builder(
+      reactContext.contentResolver,
+      MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+    )
+      .setContentValues(contentValues)
+      .build()
+
+    recording = videoCapture.output
+      .prepareRecording(reactContext, mediaStoreOutputOptions)
+      .apply {
+        if (ContextCompat.checkSelfPermission(
+            reactContext,
+            Manifest.permission.RECORD_AUDIO
+          ) == PackageManager.PERMISSION_GRANTED
+        ) {
+          withAudioEnabled()
+        }
+      }
+      .start(ContextCompat.getMainExecutor(reactContext)) { recordEvent ->
+        when (recordEvent) {
+          is VideoRecordEvent.Start -> {
+            // Handle start of recording
+          }
+          is VideoRecordEvent.Finalize -> {
+            if (!recordEvent.hasError()) {
+              // Video capture succeeded and saved to gallery
+              Log.d("RnFaceBlurViewManager", "Video capture succeeded: ${recordEvent.outputResults.outputUri}")
+            } else {
+              // Video capture failed
+              Log.e("RnFaceBlurViewManager", "Video capture failed: ${recordEvent.error}")
+              recording?.close()
+              recording = null
+            }
+          }
+        }
+      }
+  }
+
   override fun getCommandsMap(): Map<String, Int> {
     return mapOf(
-      "startCamera" to COMMAND_START_CAMERA,
-      "stopCamera" to COMMAND_STOP_CAMERA,
+      "startCamera" to COMMAND_START_RECORDING,
+      "stopCamera" to COMMAND_STOP_RECORDING,
       "flipCamera" to COMMAND_FLIP_CAMERA
+    )
+  }
+
+  override fun getExportedCustomDirectEventTypeConstants(): Map<String, Any>? {
+    return MapBuilder.of(
+      "topStartCamera",
+      MapBuilder.of("registrationName", "onStartCamera"),
+      "topStopCamera",
+      MapBuilder.of("registrationName", "onStopCamera"),
+      "topFlipCamera",
+      MapBuilder.of("registrationName", "onFlipCamera")
     )
   }
 
   override fun receiveCommand(root: FrameLayout, commandId: Int, args: ReadableArray?) {
     when (commandId) {
-      COMMAND_START_CAMERA -> startRecording()
-      COMMAND_STOP_CAMERA -> stopRecording()
+      COMMAND_START_RECORDING -> {
+        startRecording()
+      }
+      COMMAND_STOP_RECORDING -> stopCamera()
       COMMAND_FLIP_CAMERA -> flipCamera()
     }
   }
 
-  private fun startRecording() {
-    Log.d("RNEvents", "Starting Recording")
-  }
-
-  private fun stopRecording() {
-    Log.d("RNEvents", "Stop Recording")
-  }
-
-  private fun flipCamera() {
-    Log.d("RNEvents", "Flip Camera")
-  }
-
   companion object {
-    private const val REACT_CLASS = "RnFaceBlurView"
-    private const val COMMAND_START_CAMERA = 1
-    private const val COMMAND_STOP_CAMERA = 2
+    private const val COMMAND_START_RECORDING = 1
+    private const val COMMAND_STOP_RECORDING = 2
     private const val COMMAND_FLIP_CAMERA = 3
   }
 }
