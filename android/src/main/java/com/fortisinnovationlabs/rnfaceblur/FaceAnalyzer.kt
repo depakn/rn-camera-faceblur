@@ -31,11 +31,12 @@ class FaceAnalyzer(lifecycle: Lifecycle, private val overlay: Overlay, private v
 
   override fun analyze(imageProxy: ImageProxy) {
     overlay.setPreviewSize(Size(imageProxy.width, imageProxy.height))
+
+    Log.d("FaceAnalyzer: ", "w: ${imageProxy.width}, h: ${imageProxy.height}")
     detectFaces(imageProxy)
   }
 
   private val successListener = OnSuccessListener<List<Face>> { faces ->
-    Log.d(TAG, "Number of face detected: " + faces.size)
     overlay.setFaces(faces)
     onFacesDetected(faces)
   }

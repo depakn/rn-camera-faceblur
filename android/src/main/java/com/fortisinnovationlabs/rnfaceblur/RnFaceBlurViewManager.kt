@@ -3,21 +3,17 @@ package com.fortisinnovationlabs.rnfaceblur
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
-import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.graphics.SurfaceTexture
 import android.util.Log
-import android.util.Size
 import android.view.Surface
 import android.view.TextureView
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.video.*
-import androidx.camera.video.VideoCapture
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -169,9 +165,7 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
     }
 
     preview.setSurfaceProvider(surfaceProvider)
-
-    val previewSize = Size(textureView.width, textureView.height)
-    videoProcessor = VideoProcessor(textureView.width, textureView.height)
+    videoProcessor = VideoProcessor(textureView.width, textureView.height);
 
     faceAnalyzer = ImageAnalysis.Builder()
       .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -183,13 +177,15 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
       }
 
     frameProcessor = ImageAnalysis.Builder()
-      .setTargetAspectRatio(AspectRatio.RATIO_16_9)
+      .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
       .build()
       .also {
         it.setAnalyzer(cameraExecutor, ImageAnalysis.Analyzer { imageProxy ->
           if (isRecording.get()) {
             try {
-              val processedFrame = videoProcessor.processFrame(imageProxy, latestFaces)
+              val isFrontFacing = cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
+              val processedFrame = videoProcessor.processFrame(imageProxy, latestFaces, isFrontFacing)
+              Log.d("RnFaceBlurViewManager", "processedFrameWidth: ${processedFrame.width}, height: ${processedFrame.height}");
               videoProcessor.drawToSurface(processedFrame, videoEncoder?.inputSurface)
               videoEncoder?.drainEncoder(false)
               Log.d("RnFaceBlurViewManager", "Frame processed and drawn to encoder surface")

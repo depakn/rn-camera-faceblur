@@ -31,6 +31,9 @@ class VideoEncoder(
     format.setInteger(MediaFormat.KEY_FRAME_RATE, 30)
     format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
 
+    format.setInteger(MediaFormat.KEY_WIDTH, width)
+    format.setInteger(MediaFormat.KEY_HEIGHT, height)
+
     encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
     encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
     inputSurface = encoder.createInputSurface()

@@ -2,37 +2,41 @@ package com.fortisinnovationlabs.rnfaceblur
 
 import android.graphics.*
 import android.util.Log
+import android.util.Size
 import androidx.camera.core.ImageProxy
 import com.google.mlkit.vision.face.Face
 import android.view.Surface
 import java.io.ByteArrayOutputStream
 
-class VideoProcessor(private val width: Int, private val height: Int) {
+class VideoProcessor(width: Int, height: Int) {
+  private var previewWidth: Int = width
+  private var previewHeight: Int = height
   private val paint = Paint().apply {
     color = Color.YELLOW
     style = Paint.Style.STROKE
-    strokeWidth = 5f
+    strokeWidth = 2f
   }
 
-  fun processFrame(image: ImageProxy, faces: List<Face>): Bitmap {
+  fun processFrame(image: ImageProxy, faces: List<Face>, isFrontFacing: Boolean): Bitmap {
     val bitmap = image.toBitmap()
-    val rotatedBitmap = rotateImage(bitmap, -90f)
+    val angle = if (isFrontFacing) -90f else 90f
+    val rotatedBitmap = rotateImage(bitmap, angle)
     val canvas = Canvas(rotatedBitmap)
 
-    val scaleX = rotatedBitmap.width.toFloat() / image.width.toFloat()
-    val scaleY = rotatedBitmap.height.toFloat() / image.height.toFloat()
+    val scaleX = rotatedBitmap.width.toFloat() / image.height.toFloat()
+    val scaleY = rotatedBitmap.height.toFloat() / image.width.toFloat()
+
+    Log.d("VideoProcessor: ", "w: ${image.width}, h: ${image.height}")
 
     faces.forEach { face ->
       val bounds = face.boundingBox
 
-      val left = bounds.left.toFloat() // Dont change
-      val top = bounds.top * scaleY // Dont change
-      val right = bounds.right.toFloat() + bounds.left.toFloat() // Needs change
-      val bottom = bounds.bottom.toFloat() +bounds.top.toFloat() // Needs change
+      val left = scaleX * bounds.left.toFloat()
+      val top = scaleY * bounds.top.toFloat()
+      val right = scaleX * bounds.right.toFloat()
+      val bottom = scaleY * bounds.bottom.toFloat()
 
       canvas.drawRect(left, top, right, bottom, paint)
-
-      Log.d("VideoProcessor: ", "bl: ${rotatedBitmap.width}, br: ${bounds.right}")
     }
 
     return rotatedBitmap
@@ -41,7 +45,7 @@ class VideoProcessor(private val width: Int, private val height: Int) {
   fun drawToSurface(bitmap: Bitmap, surface: Surface?) {
     surface?.let {
       val canvas = it.lockCanvas(null)
-      canvas.drawBitmap(bitmap, null, Rect(0, 0, width, height), null)
+      canvas.drawBitmap(bitmap, null, Rect(0, 0, previewWidth, previewHeight), null)
       it.unlockCanvasAndPost(canvas)
     }
   }
@@ -61,9 +65,9 @@ class VideoProcessor(private val width: Int, private val height: Int) {
     vBuffer.get(nv21, ySize, vSize)
     uBuffer.get(nv21, ySize + vSize, uSize)
 
-    val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
+    val yuvImage = YuvImage(nv21, ImageFormat.NV21, previewWidth, previewHeight, null)
     val out = ByteArrayOutputStream()
-    yuvImage.compressToJpeg(Rect(0, 0, width, height), 100, out)
+    yuvImage.compressToJpeg(Rect(0, 0, previewWidth, previewHeight), 100, out)
     val imageBytes = out.toByteArray()
     return BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
   }
