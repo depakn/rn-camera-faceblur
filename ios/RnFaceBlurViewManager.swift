@@ -93,6 +93,9 @@ class RnFaceBlurView: UIView {
   }
 
   @objc func flipCamera() {
+    if isRecording {
+      return
+    }
     captureSession.beginConfiguration()
 
     guard let currentInput = captureSession.inputs.first as? AVCaptureDeviceInput else {
@@ -202,7 +205,7 @@ class RnFaceBlurView: UIView {
 
         let videoSettings: [String: Any] = [
           AVVideoCodecKey: AVVideoCodecType.h264,
-          AVVideoWidthKey: NSNumber(value: Float(self.bounds.height)),  // Swap width and height
+          AVVideoWidthKey: NSNumber(value: Float(self.bounds.height)),
           AVVideoHeightKey: NSNumber(value: Float(self.bounds.width)),
         ]
 
@@ -360,7 +363,9 @@ extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate {
 
     // Draw the video frame
     graphicsContext.translateBy(x: imageSize.width / 2, y: imageSize.height / 2)
-    graphicsContext.rotate(by: .pi / 2)
+    if currentCameraPosition == .front {
+      graphicsContext.rotate(by: .pi / 2)
+    }
     graphicsContext.translateBy(x: -imageSize.height / 2, y: -imageSize.width / 2)
     graphicsContext.draw(
       cgImage,
