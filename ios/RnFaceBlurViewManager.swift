@@ -350,7 +350,11 @@ extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate {
 
     let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
     let context = CIContext()
-    guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+
+    // Apply face blurring
+    let blurredImage = applyFaceBlur(to: ciImage)
+
+    guard let cgImage = context.createCGImage(blurredImage, from: blurredImage.extent) else {
       return
     }
 
@@ -361,44 +365,72 @@ extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate {
     UIGraphicsBeginImageContextWithOptions(imageSize, false, 1.0)
     let graphicsContext = UIGraphicsGetCurrentContext()!
 
-    // Draw the video frame
+    // Draw the video frame with correct orientation
     graphicsContext.translateBy(x: imageSize.width / 2, y: imageSize.height / 2)
-    if currentCameraPosition == .front {
-      graphicsContext.rotate(by: .pi / 2)
-    }
+    graphicsContext.rotate(by: .pi / 2)
     graphicsContext.translateBy(x: -imageSize.height / 2, y: -imageSize.width / 2)
     graphicsContext.draw(
       cgImage,
       in: CGRect(origin: .zero, size: CGSize(width: imageSize.height, height: imageSize.width)))
 
-    // Reset the transform for drawing overlays
-    graphicsContext.resetClip()
-
-    // Draw face detection overlays
-    for observation in faceObservations {
-      let boundingBox = VNImageRectForNormalizedRect(
-        observation.boundingBox, Int(imageSize.width), Int(imageSize.height))
-
-      // Adjust the coordinates to correct the vertical flip
-      let rotatedRect = CGRect(
-        x: imageSize.height - boundingBox.maxY,
-        y: imageSize.width - boundingBox.maxX,  // Change this line
-        width: boundingBox.height,
-        height: boundingBox.width)
-
-      graphicsContext.setStrokeColor(UIColor.green.cgColor)
-      graphicsContext.setLineWidth(2.0)
-      graphicsContext.stroke(rotatedRect)
-    }
-
-    let overlayImage = UIGraphicsGetImageFromCurrentImageContext()
+    let orientedImage = UIGraphicsGetImageFromCurrentImageContext()
     UIGraphicsEndImageContext()
 
-    if let cgImage = overlayImage?.cgImage,
+    if let cgImage = orientedImage?.cgImage,
       let pixelBuffer = pixelBufferFromCGImage(cgImage)
     {
       pixelBufferAdaptor?.append(pixelBuffer, withPresentationTime: presentationTime)
     }
+  }
+
+  private func applyFaceBlur(to image: CIImage) -> CIImage {
+    guard !faceObservations.isEmpty else { return image }
+
+    var blurredImage = image
+
+    for observation in faceObservations {
+      let boundingBox = observation.boundingBox
+
+      // Convert the coordinates to match the image orientation
+      let convertedBoundingBox = CGRect(
+        x: 1 - boundingBox.minY - boundingBox.height,  // Changed this line
+        y: 1 - boundingBox.minX - boundingBox.width,
+        width: boundingBox.height,
+        height: boundingBox.width
+      )
+
+      let faceBounds = VNImageRectForNormalizedRect(
+        convertedBoundingBox, Int(image.extent.width), Int(image.extent.height))
+
+      // Expand the face bounds slightly
+      let expandedFaceBounds = faceBounds.insetBy(
+        dx: -faceBounds.width * 0.1, dy: -faceBounds.height * 0.1)
+
+      // Create a blurred version of the entire image
+      guard let blurFilter = CIFilter(name: "CIGaussianBlur") else { continue }
+      blurFilter.setValue(image, forKey: kCIInputImageKey)
+      blurFilter.setValue(30, forKey: kCIInputRadiusKey)  // Adjust blur intensity as needed
+      guard let blurredFullImage = blurFilter.outputImage else { continue }
+
+      // Create a rounded rectangle mask
+      let path = CGPath(
+        roundedRect: expandedFaceBounds, cornerWidth: 20, cornerHeight: 20, transform: nil)
+      let maskImage = CIImage(cgImage: path.asCGImage())
+        .applyingFilter("CIMaskToAlpha")
+        .cropped(to: expandedFaceBounds)
+
+      // Blend the blurred image with the original image using the mask
+      guard let blendFilter = CIFilter(name: "CIBlendWithMask") else { continue }
+      blendFilter.setValue(blurredFullImage, forKey: kCIInputImageKey)
+      blendFilter.setValue(blurredImage, forKey: kCIInputBackgroundImageKey)
+      blendFilter.setValue(maskImage, forKey: kCIInputMaskImageKey)
+
+      guard let outputImage = blendFilter.outputImage else { continue }
+
+      blurredImage = outputImage
+    }
+
+    return blurredImage
   }
 
   private func pixelBufferFromCGImage(_ image: CGImage) -> CVPixelBuffer? {
@@ -436,6 +468,19 @@ extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate {
     CVPixelBufferUnlockBaseAddress(pixelBuffer, CVPixelBufferLockFlags(rawValue: 0))
 
     return pixelBuffer
+  }
+}
+
+extension CGPath {
+  func asCGImage() -> CGImage {
+    let bounds = self.boundingBox
+    let renderer = UIGraphicsImageRenderer(bounds: bounds)
+    let cgImage = renderer.image { context in
+      context.cgContext.addPath(self)
+      context.cgContext.setFillColor(UIColor.white.cgColor)
+      context.cgContext.fillPath()
+    }.cgImage!
+    return cgImage
   }
 }
 
