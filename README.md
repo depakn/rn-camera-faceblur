@@ -42,6 +42,7 @@ yarn add @fortis-innovation-labs/rn-face-blur
      <uses-permission android:name="android.permission.RECORD_AUDIO" />
      <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
      <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+     <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
      ```
 
 ## Usage
