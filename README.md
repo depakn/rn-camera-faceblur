@@ -31,7 +31,7 @@ yarn add @sd-tech/rn-camera-face-blur
      <string>We need access to your camera to record videos.</string>
      <key>NSMicrophoneUsageDescription</key>
      <string>We need access to your microphone to record audio with your videos.</string>
-     <key>NSPhotoLibraryAddUsageDescription</key>
+     <key>NSPhotoLibraryUsageDescription</key>
      <string>We need access to save videos to your photo library.</string>
      ```
 
