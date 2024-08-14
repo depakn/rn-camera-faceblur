@@ -60,6 +60,7 @@
   },
   "homepage": "https://github.com/depakn/rn-camera-faceblur#readme",
   "publishConfig": {
+    "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
   "devDependencies": {
