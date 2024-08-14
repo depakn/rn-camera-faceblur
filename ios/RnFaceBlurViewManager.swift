@@ -94,18 +94,12 @@ class RnFaceBlurView: UIView {
   }
 
   @objc func startCamera() {
-    if !captureSession.isRunning {
-      captureSession.startRunning()
-    }
     startRecording()
   }
 
   @objc func stopCamera() {
-    if captureSession.isRunning {
-      stopRecording()
-      captureSession.stopRunning()
-      clearDrawings()
-    }
+    stopRecording()
+    clearDrawings()
   }
 
   @objc func toggleFlash() {
@@ -183,6 +177,10 @@ class RnFaceBlurView: UIView {
     showCameraFeed()
     getCameraFrames()
     setVideoOrientation()
+
+    if !captureSession.isRunning {
+      captureSession.startRunning()
+    }
   }
 
   private func setVideoOrientation() {
