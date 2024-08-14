@@ -1,7 +1,7 @@
 
-# @sdtech/rn-face-blur
+# @sd-tech/rn-camera-face-blur
 
-`@sdtech/rn-face-blur` is a React Native module that allows you to capture videos with real-time face blurring using native modules. This package is designed to integrate seamlessly with your React Native application, providing a simple API for starting, stopping, and configuring video recording with face blurring.
+`@sd-tech/rn-camera-face-blur` is a React Native module that allows you to capture videos with real-time face blurring using native modules. This package is designed to integrate seamlessly with your React Native application, providing a simple API for starting, stopping, and configuring video recording with face blurring.
 
 ## Features
 
@@ -13,13 +13,13 @@
 ## Installation
 
 ```sh
-npm install @sdtech/rn-face-blur
+npm install @sd-tech/rn-camera-face-blur
 ```
 
 or
 
 ```sh
-yarn add @sdtech/rn-face-blur
+yarn add @sd-tech/rn-camera-face-blur
 ```
 
 ### Additional Steps
@@ -47,7 +47,7 @@ yarn add @sdtech/rn-face-blur
 
 ## Usage
 
-Here’s an example of how to use the `@sdtech/rn-face-blur` package in your React Native application:
+Here’s an example of how to use the `@sd-tech/rn-camera-face-blur` package in your React Native application:
 
 ```javascript
 import React, { useRef, useState } from 'react';
@@ -55,7 +55,7 @@ import { Button, StyleSheet, View } from 'react-native';
 import {
   FaceBlurVideoRecording,
   type FaceBlurVideoRecordingRef,
-} from '@sdtech/rn-face-blur';
+} from '@sd-tech/rn-camera-face-blur';
 
 export default function App() {
   const [isRecording, setIsRecording] = useState(false);

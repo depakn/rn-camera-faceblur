@@ -1,5 +1,5 @@
 {
-  "name": "@sdtech/rn-face-blur",
+  "name": "@sd-tech/rn-camera-face-blur",
   "version": "0.1.0",
   "description": "React Native on device video face blur",
   "source": "./src/index.tsx",
@@ -36,7 +36,7 @@
     "!**/.*"
   ],
   "scripts": {
-    "example": "yarn workspace @sdtech/rn-face-blur-example",
+    "example": "yarn workspace @sd-tech/rn-camera-face-blur-example",
     "test": "jest",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",

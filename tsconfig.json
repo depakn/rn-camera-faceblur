@@ -2,7 +2,7 @@
   "compilerOptions": {
     "rootDir": ".",
     "paths": {
-      "@sdtech/rn-face-blur": ["./src/index"]
+      "@sd-tech/rn-camera-face-blur": ["./src/index"]
     },
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,
