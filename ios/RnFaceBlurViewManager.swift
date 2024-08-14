@@ -57,6 +57,12 @@ class RnFaceBlurViewManager: RCTViewManager {
 }
 
 class RnFaceBlurView: UIView {
+
+  @objc var onCameraPositionUpdate: RCTDirectEventBlock?
+  @objc var onRecordingStatusChange: RCTDirectEventBlock?
+  @objc var onRecordingComplete: RCTDirectEventBlock?
+  @objc var onRecordingError: RCTDirectEventBlock?
+
   private var drawings: [CAShapeLayer] = []
   private let videoDataOutput = AVCaptureVideoDataOutput()
   private let captureSession = AVCaptureSession()
@@ -165,6 +171,11 @@ class RnFaceBlurView: UIView {
     }
 
     captureSession.commitConfiguration()
+
+    // Trigger the onCameraPositionUpdate event
+    if let onCameraPositionUpdate = onCameraPositionUpdate {
+      onCameraPositionUpdate(["position": currentCameraPosition == .front ? "front" : "back"])
+    }
   }
 
   private func setupView() {
@@ -276,6 +287,11 @@ class RnFaceBlurView: UIView {
         print("Error setting up asset writer: \(error)")
         return
       }
+
+      // Trigger the onRecordingStatusChange event
+      if let onRecordingStatusChange = onRecordingStatusChange {
+        onRecordingStatusChange(["isRecording": true])
+      }
     }
   }
 
@@ -286,6 +302,10 @@ class RnFaceBlurView: UIView {
       assetWriter?.finishWriting { [weak self] in
         guard let self = self, let videoOutputURL = self.videoOutputURL else { return }
         self.saveVideoToPhotos(outputFileURL: videoOutputURL)
+
+        if let onRecordingStatusChange = self.onRecordingStatusChange {
+          onRecordingStatusChange(["isRecording": false])
+        }
       }
     }
   }
@@ -545,12 +565,23 @@ extension RnFaceBlurView: AVCaptureFileOutputRecordingDelegate {
         }) { success, error in
           if success {
             print("Video saved to Photos")
+
+            if let onRecordingComplete = self.onRecordingComplete {
+              onRecordingComplete(["fileUrl": outputFileURL.absoluteString])
+            }
           } else {
             print("Error saving video: \(error?.localizedDescription ?? "")")
+            if let onRecordingError = self.onRecordingError {
+              onRecordingError(["error": error?.localizedDescription ?? "Unknown error"])
+            }
           }
         }
       } else {
         print("Permission to access Photos is not granted")
+
+        if let onRecordingError = self.onRecordingError {
+          onRecordingError(["error": "Permission to access Photos is not granted"])
+        }
       }
     }
   }

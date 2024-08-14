@@ -15,15 +15,18 @@ const LINKING_ERROR =
 
 export type CAMERA_POSITION = 'front' | 'back';
 
-export type RnFaceBlurProps = {
-  color?: string;
-  ref?: any;
-  style?: ViewStyle;
+type RnFaceBlurNativeEvents = {
   onCameraPositionUpdate?: (newPosition: CAMERA_POSITION) => void;
   onRecordingStatusChange?: (isRecording: boolean) => void;
   onRecordingComplete?: (fileUrl: string) => void;
   onRecordingError?: (error: Record<string, string>) => void;
 };
+
+export type RnFaceBlurProps = {
+  color?: string;
+  ref?: any;
+  style?: ViewStyle;
+} & RnFaceBlurNativeEvents;
 
 export type FaceBlurVideoRecordingRef = {
   startRecording: () => void;
@@ -79,5 +82,23 @@ export const FaceBlurVideoRecording = React.forwardRef<
     }
   };
 
-  return <RnFaceBlur {...props} ref={faceblurRef} />;
+  const nativeEvents: RnFaceBlurNativeEvents = {
+    onCameraPositionUpdate: (event: any) => {
+      props.onCameraPositionUpdate &&
+        props.onCameraPositionUpdate(event.nativeEvent.position);
+    },
+    onRecordingStatusChange: (event: any) => {
+      props.onRecordingStatusChange &&
+        props.onRecordingStatusChange(event.nativeEvent.isRecording);
+    },
+    onRecordingComplete: (event: any) => {
+      props.onRecordingComplete &&
+        props.onRecordingComplete(event.nativeEvent.fileUrl);
+    },
+    onRecordingError: (event: any) => {
+      props.onRecordingError && props.onRecordingError(event.nativeEvent.error);
+    },
+  };
+
+  return <RnFaceBlur {...props} {...nativeEvents} ref={faceblurRef} />;
 });
