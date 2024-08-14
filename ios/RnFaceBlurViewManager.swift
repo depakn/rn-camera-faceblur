@@ -549,9 +549,6 @@ extension RnFaceBlurView: AVCaptureFileOutputRecordingDelegate {
     from connections: [AVCaptureConnection], error: Error?
   ) {
     if error == nil {
-      if let onRecordingComplete = self.onRecordingComplete {
-        onRecordingComplete(["fileUrl": outputFileURL.absoluteString])
-      }
       saveVideoToPhotos(outputFileURL: outputFileURL)
     } else {
       print("Error recording movie: \(error?.localizedDescription ?? "")")
@@ -562,6 +559,9 @@ extension RnFaceBlurView: AVCaptureFileOutputRecordingDelegate {
   }
 
   private func saveVideoToPhotos(outputFileURL: URL) {
+    if let onRecordingComplete = self.onRecordingComplete {
+      onRecordingComplete(["fileUrl": outputFileURL.absoluteString])
+    }
     PHPhotoLibrary.requestAuthorization { status in
       if status == .authorized {
         PHPhotoLibrary.shared().performChanges({

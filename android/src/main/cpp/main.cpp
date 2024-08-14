@@ -103,7 +103,7 @@ void stackBlur(int* pix, int w, int h, int radius) {
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_fortisinnovationlabs_rnfaceblur_VideoProcessor_nativeStackBlur(
+Java_com_sdtech_rnfaceblur_VideoProcessor_nativeStackBlur(
         JNIEnv* env,
         jobject /* this */,
         jintArray pixelsArray,

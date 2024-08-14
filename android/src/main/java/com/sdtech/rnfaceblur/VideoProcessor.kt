@@ -1,4 +1,4 @@
-package com.fortisinnovationlabs.rnfaceblur
+package com.sdtech.rnfaceblur
 
 import android.graphics.*
 import android.util.Log

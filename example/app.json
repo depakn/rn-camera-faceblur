@@ -30,9 +30,9 @@
     ]
   },
   "android": {
-    "package": "fortisinnovationlabs.rnfaceblur.example"
+    "package": "sdtech.rnfaceblur.example"
   },
   "ios": {
-    "bundleIdentifier": "fortisinnovationlabs.rnfaceblur.example"
+    "bundleIdentifier": "sdtech.rnfaceblur.example"
   }
 }

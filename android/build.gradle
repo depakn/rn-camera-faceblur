@@ -49,7 +49,7 @@ def supportsNamespace() {
 
 android {
   if (supportsNamespace()) {
-    namespace "com.fortisinnovationlabs.rnfaceblur"
+    namespace "com.sdtech.rnfaceblur"
 
     sourceSets {
       main {

@@ -2,7 +2,7 @@ import { Button, StyleSheet, View } from 'react-native';
 import {
   FaceBlurVideoRecording,
   type FaceBlurVideoRecordingRef,
-} from '@fortis-innovation-labs/rn-face-blur';
+} from '@sdtech/rn-face-blur';
 import { useRef, useState } from 'react';
 
 export default function App() {

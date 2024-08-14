@@ -2,7 +2,7 @@
   "compilerOptions": {
     "rootDir": ".",
     "paths": {
-      "@fortis-innovation-labs/rn-face-blur": ["./src/index"]
+      "@sdtech/rn-face-blur": ["./src/index"]
     },
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,

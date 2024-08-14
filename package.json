@@ -1,5 +1,5 @@
 {
-  "name": "@fortis-innovation-labs/rn-face-blur",
+  "name": "@sdtech/rn-face-blur",
   "version": "0.1.0",
   "description": "React Native on device video face blur",
   "source": "./src/index.tsx",
@@ -36,7 +36,7 @@
     "!**/.*"
   ],
   "scripts": {
-    "example": "yarn workspace @fortis-innovation-labs/rn-face-blur-example",
+    "example": "yarn workspace @sdtech/rn-face-blur-example",
     "test": "jest",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
@@ -51,14 +51,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/depakn/fortis-innovation-labs-rn-face-blur.git"
+    "url": "git+https://github.com/depakn/rn-camera-faceblur.git"
   },
   "author": "Deepak Natarajan <deepak@studiodiseno.com> (https://github.com/depakn)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/depakn/fortis-innovation-labs-rn-face-blur/issues"
+    "url": "https://github.com/depakn/rn-camera-faceblur/issues"
   },
-  "homepage": "https://github.com/depakn/fortis-innovation-labs-rn-face-blur#readme",
+  "homepage": "https://github.com/depakn/rn-camera-faceblur#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

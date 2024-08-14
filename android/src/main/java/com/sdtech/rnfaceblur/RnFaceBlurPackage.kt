@@ -1,4 +1,4 @@
-package com.fortisinnovationlabs.rnfaceblur
+package com.sdtech.rnfaceblur
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule

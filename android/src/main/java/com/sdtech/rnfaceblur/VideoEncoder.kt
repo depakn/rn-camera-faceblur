@@ -1,4 +1,4 @@
-package com.fortisinnovationlabs.rnfaceblur
+package com.sdtech.rnfaceblur
 
 import android.media.MediaCodec
 import android.media.MediaCodecInfo

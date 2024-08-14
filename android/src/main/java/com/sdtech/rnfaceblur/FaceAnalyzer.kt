@@ -1,4 +1,4 @@
-package com.fortisinnovationlabs.rnfaceblur
+package com.sdtech.rnfaceblur
 
 import android.annotation.SuppressLint
 import android.media.Image
