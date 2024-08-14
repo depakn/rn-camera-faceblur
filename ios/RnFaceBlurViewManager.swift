@@ -44,6 +44,16 @@ class RnFaceBlurViewManager: RCTViewManager {
       }
     }
   }
+
+  @objc func toggleFlash(_ node: NSNumber) {
+    self.bridge.uiManager.addUIBlock { (uiManager, viewRegistry) in
+      if let view = viewRegistry?[node] as? RnFaceBlurView {
+        DispatchQueue.main.async {
+          view.toggleFlash()
+        }
+      }
+    }
+  }
 }
 
 class RnFaceBlurView: UIView {
@@ -89,6 +99,37 @@ class RnFaceBlurView: UIView {
       stopRecording()
       captureSession.stopRunning()
       clearDrawings()
+    }
+  }
+
+  @objc func toggleFlash() {
+    if isRecording {
+      return
+    }
+
+    let deviceDiscoverySession = AVCaptureDevice.DiscoverySession(
+      deviceTypes: [.builtInDualCamera], mediaType: AVMediaType.video, position: .back)
+
+    guard let device = deviceDiscoverySession.devices.first
+    else { return }
+
+    if device.hasTorch {
+      do {
+        try device.lockForConfiguration()
+        let on = device.isTorchActive
+        if on != true && device.isTorchModeSupported(.on) {
+          try device.setTorchModeOn(level: 1.0)
+        } else if device.isTorchModeSupported(.off) {
+          device.torchMode = .off
+        } else {
+          print("Torch mode is not supported")
+        }
+        device.unlockForConfiguration()
+      } catch {
+        print("Torch could not be used")
+      }
+    } else {
+      print("Torch is not available")
     }
   }
 
