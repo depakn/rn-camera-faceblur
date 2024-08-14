@@ -549,9 +549,15 @@ extension RnFaceBlurView: AVCaptureFileOutputRecordingDelegate {
     from connections: [AVCaptureConnection], error: Error?
   ) {
     if error == nil {
+      if let onRecordingComplete = self.onRecordingComplete {
+        onRecordingComplete(["fileUrl": outputFileURL.absoluteString])
+      }
       saveVideoToPhotos(outputFileURL: outputFileURL)
     } else {
       print("Error recording movie: \(error?.localizedDescription ?? "")")
+      if let onRecordingError = self.onRecordingError {
+        onRecordingError(["error": error?.localizedDescription ?? "Unknown error"])
+      }
     }
   }
 
@@ -563,15 +569,8 @@ extension RnFaceBlurView: AVCaptureFileOutputRecordingDelegate {
         }) { success, error in
           if success {
             print("Video saved to Photos")
-
-            if let onRecordingComplete = self.onRecordingComplete {
-              onRecordingComplete(["fileUrl": outputFileURL.absoluteString])
-            }
           } else {
             print("Error saving video: \(error?.localizedDescription ?? "")")
-            if let onRecordingError = self.onRecordingError {
-              onRecordingError(["error": error?.localizedDescription ?? "Unknown error"])
-            }
           }
         }
       } else {
