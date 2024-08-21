@@ -1145,7 +1145,7 @@ PODS:
     - React-Core
     - React-jsi
   - ReactTestApp-Resources (1.0.0-dev)
-  - sdtech-rn-face-blur (0.1.0):
+  - sdtech-rn-face-blur (0.2.1):
     - DoubleConversion
     - glog
     - RCT-Folly (= 2024.01.01.00)
@@ -1402,7 +1402,7 @@ SPEC CHECKSUMS:
   ReactNativeHost: 4983b4bfdef9f1a67f523b633909df57a9c1dae9
   ReactTestApp-DevSupport: 5906c7ab63d7bc409bf621adde64696b09d90b76
   ReactTestApp-Resources: 857244f3a23f2b3157b364fa06cf3e8866deff9c
-  sdtech-rn-face-blur: 9ed5e72c6ee662f3c3710444f0b0dc925fb414f8
+  sdtech-rn-face-blur: 81a63b33929757e2fdc5bed61f664611b2863afe
   SocketRocket: abac6f5de4d4d62d24e11868d7a2f427e0ef940d
   Yoga: 950bbfd7e6f04790fdb51149ed51df41f329fcc8
 
