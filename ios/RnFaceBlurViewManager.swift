@@ -80,6 +80,10 @@ class RnFaceBlurView: UIView {
 
   private var faceObservations: [VNFaceObservation] = []
 
+  private var audioDataOutput = AVCaptureAudioDataOutput()
+  private var audioInput: AVCaptureDeviceInput?
+  private var audioAssetWriterInput: AVAssetWriterInput?
+
   // Save Variables
   private var isRecording = false
 
@@ -174,12 +178,38 @@ class RnFaceBlurView: UIView {
 
   private func setupView() {
     addCameraInput()
+    addAudioInput()
     showCameraFeed()
     getCameraFrames()
+    getAudioSamples()
     setVideoOrientation()
 
     if !captureSession.isRunning {
       captureSession.startRunning()
+    }
+  }
+
+  private func addAudioInput() {
+    guard let audioDevice = AVCaptureDevice.default(for: .audio) else {
+      print("Unable to access audio device")
+      return
+    }
+
+    do {
+      audioInput = try AVCaptureDeviceInput(device: audioDevice)
+      if captureSession.canAddInput(audioInput!) {
+        captureSession.addInput(audioInput!)
+      }
+    } catch {
+      print("Error setting up audio input: \(error)")
+    }
+  }
+
+  private func getAudioSamples() {
+    if captureSession.canAddOutput(audioDataOutput) {
+      captureSession.addOutput(audioDataOutput)
+      let audioQueue = DispatchQueue(label: "audio_processing_queue")
+      audioDataOutput.setSampleBufferDelegate(self, queue: audioQueue)
     }
   }
 
@@ -279,6 +309,21 @@ class RnFaceBlurView: UIView {
           assetWriter!.add(assetWriterInput!)
         }
 
+        // Add audio input to asset writer
+        let audioSettings: [String: Any] = [
+          AVFormatIDKey: kAudioFormatMPEG4AAC,
+          AVSampleRateKey: 44100,
+          AVNumberOfChannelsKey: 2,
+          AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+        ]
+
+        audioAssetWriterInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+        audioAssetWriterInput?.expectsMediaDataInRealTime = true
+
+        if assetWriter!.canAdd(audioAssetWriterInput!) {
+          assetWriter!.add(audioAssetWriterInput!)
+        }
+
         assetWriter!.startWriting()
         startTime = nil
       } catch {
@@ -353,10 +398,6 @@ class RnFaceBlurView: UIView {
       let faceBoundingBoxPath = CGPath(rect: faceBoundingBoxOnScreen, transform: nil)
       let faceBoundingBoxShape = CAShapeLayer()
 
-      faceBoundingBoxShape.path = faceBoundingBoxPath
-      faceBoundingBoxShape.fillColor = UIColor.clear.cgColor
-      faceBoundingBoxShape.strokeColor = UIColor.green.cgColor
-
       return faceBoundingBoxShape
     }
 
@@ -372,11 +413,22 @@ class RnFaceBlurView: UIView {
   }
 }
 
-extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate {
+extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate,
+  AVCaptureAudioDataOutputSampleBufferDelegate
+{
   func captureOutput(
-    _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
+    _ output: AVCaptureOutput,
+    didOutput sampleBuffer: CMSampleBuffer,
     from connection: AVCaptureConnection
   ) {
+    if output == videoDataOutput {
+      processVideoSampleBuffer(sampleBuffer)
+    } else if output == audioDataOutput {
+      processAudioSampleBuffer(sampleBuffer)
+    }
+  }
+
+  private func processVideoSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
     guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
       return
     }
@@ -385,6 +437,25 @@ extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate {
 
     if isRecording {
       processVideoFrame(sampleBuffer: sampleBuffer)
+    }
+  }
+
+  private func processAudioSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+    if isRecording {
+      guard let audioAssetWriterInput = audioAssetWriterInput,
+        audioAssetWriterInput.isReadyForMoreMediaData
+      else {
+        return
+      }
+
+      let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+
+      if startTime == nil {
+        startTime = presentationTime
+        assetWriter?.startSession(atSourceTime: presentationTime)
+      }
+
+      audioAssetWriterInput.append(sampleBuffer)
     }
   }
 
