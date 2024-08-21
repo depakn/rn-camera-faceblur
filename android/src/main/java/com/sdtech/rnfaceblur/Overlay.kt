@@ -54,15 +54,15 @@ class Overlay @JvmOverloads constructor(
   }
 
   private fun drawFaceBorder(face: Face, canvas: Canvas) {
-    val bounds = face.boundingBox
-    val scaledBounds = RectF(
-      translateX(bounds.left.toFloat()),
-      translateY(bounds.top.toFloat()),
-      translateX(bounds.right.toFloat()),
-      translateY(bounds.bottom.toFloat())
-    )
-
-    canvas.drawRect(scaledBounds, paint)
+//    val bounds = face.boundingBox
+//    val scaledBounds = RectF(
+//      translateX(bounds.left.toFloat()),
+//      translateY(bounds.top.toFloat()),
+//      translateX(bounds.right.toFloat()),
+//      translateY(bounds.bottom.toFloat())
+//    )
+//
+//    canvas.drawRect(scaledBounds, paint)
   }
 
   private fun translateX(x: Float): Float {

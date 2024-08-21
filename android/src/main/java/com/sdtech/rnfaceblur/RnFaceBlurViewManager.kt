@@ -1,5 +1,6 @@
 package com.sdtech.rnfaceblur
 
+import AudioRecorder
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
@@ -56,6 +57,7 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
   private var faceAnalyzer: ImageAnalysis? = null
   private val mainHandler = Handler(Looper.getMainLooper())
   private var outputFile: File? = null
+  private var audioRecorder: AudioRecorder? = null
 
   override fun getName() = "RnFaceBlurView"
 
@@ -295,30 +297,30 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
 
     try {
       val camera = cameraProvider.bindToLifecycle(
-        reactContext.currentActivity as LifecycleOwner,
-        cameraSelector
-      )
+                      reactContext.currentActivity as LifecycleOwner,
+                      cameraSelector
+              )
 
       val newTorchState = when (camera.cameraInfo.torchState.value) {
-        TorchState.ON -> false
-        TorchState.OFF -> true
-        else -> true // Default to turning on if state is unknown
-      }
+                TorchState.ON -> false
+                TorchState.OFF -> true
+                else -> true // Default to turning on if state is unknown
+              }
 
       camera.cameraControl.enableTorch(newTorchState)
         .addListener({
-          val isFlashOn = camera.cameraInfo.torchState.value == TorchState.ON
-          // Emit onFlashToggle event
-          val eventData = Arguments.createMap().apply {
-            putBoolean("isFlashOn", isFlashOn)
-          }
-          reactContext.getJSModule(RCTEventEmitter::class.java).receiveEvent(
-            frameLayout.id,
-            "topFlashToggle",
-            eventData
-          )
-          Log.d("RnFaceBlurViewManager", "Flash toggled. Is flash on: $isFlashOn")
-        }, ContextCompat.getMainExecutor(reactContext))
+                  val isFlashOn = camera.cameraInfo.torchState.value == TorchState.ON
+                  // Emit onFlashToggle event
+                  val eventData = Arguments.createMap().apply {
+                    putBoolean("isFlashOn", isFlashOn)
+                  }
+                  reactContext.getJSModule(RCTEventEmitter::class.java).receiveEvent(
+                    frameLayout.id,
+                    "topFlashToggle",
+                    eventData
+                  )
+                  Log.d("RnFaceBlurViewManager", "Flash toggled. Is flash on: $isFlashOn")
+                }, ContextCompat.getMainExecutor(reactContext))
 
     } catch (exc: Exception) {
       Log.e("RnFaceBlurViewManager", "Use case binding failed", exc)
@@ -331,21 +333,26 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
       putString("error", errorMessage)
     }
     reactContext
-      .getJSModule(RCTEventEmitter::class.java)
-      .receiveEvent(frameLayout.id, "topFlashError", eventData)
+            .getJSModule(RCTEventEmitter::class.java)
+            .receiveEvent(frameLayout.id, "topFlashError", eventData)
   }
 
   private fun startRecording() {
     Log.d("RnFaceBlurViewManager", "startRecording called")
     if (!isRecording.getAndSet(true)) {
       outputFile = File(reactContext.getExternalFilesDir(null), "processed_video.mp4")
+      val audioFile = File(reactContext.getExternalFilesDir(null), "audio.m4a")
       videoEncoder =
               VideoEncoder(
                       textureView.width,
                       textureView.height,
                       outputFile!!
               ) // Use fixed dimensions
-      Log.d("RnFaceBlurViewManager", "Recording started. Output file: ${outputFile?.absolutePath}")
+      audioRecorder = AudioRecorder(audioFile)
+      audioRecorder?.start()
+
+      Log.d("RnFaceBlurViewManager", "Recording started. Video output file: ${outputFile?.absolutePath}")
+      Log.d("RnFaceBlurViewManager", "Audio output file: ${audioFile.absolutePath}")
 
       // Emit onRecordingStatusChange event
       val eventData = Arguments.createMap().apply { putBoolean("isRecording", true) }
@@ -365,38 +372,52 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
               {
                 try {
                   videoEncoder?.stop()
-                  Log.d("RnFaceBlurViewManager", "Video encoder stopped")
+                  audioRecorder?.stop()
+                  Log.d("RnFaceBlurViewManager", "Video encoder and audio recorder stopped")
 
-                  // Check if the file was created and has content
-                  outputFile?.let { file ->
-                    if (file.exists() && file.length() > 0) {
+                  // Check if the video file was created and has content
+                  outputFile?.let { videoFile ->
+                    if (videoFile.exists() && videoFile.length() > 0) {
                       Log.d(
                               "RnFaceBlurViewManager",
-                              "Video file created successfully: ${file.absolutePath}"
+                              "Video file created successfully: ${videoFile.absolutePath}"
                       )
-                      Log.d("RnFaceBlurViewManager", "Video file size: ${file.length()} bytes")
+                      Log.d("RnFaceBlurViewManager", "Video file size: ${videoFile.length()} bytes")
+
+                      // Merge audio and video
+                      val audioFile = File(reactContext.getExternalFilesDir(null), "audio.m4a")
+                      val mergedFile =
+                              File(reactContext.getExternalFilesDir(null), "final_video.mp4")
+
+                      mergeAudioVideo(videoFile, audioFile, mergedFile)
 
                       // Emit onRecordingComplete event
                       val eventData =
                               Arguments.createMap().apply {
-                                putString("fileUrl", file.absolutePath)
+                                putString("fileUrl", mergedFile.absolutePath)
                               }
                       reactContext
                               .getJSModule(RCTEventEmitter::class.java)
                               .receiveEvent(frameLayout.id, "topRecordingComplete", eventData)
+
+                      // Clean up temporary files
+                      videoFile.delete()
+                      audioFile.delete()
                     } else {
                       Log.e(
                               "RnFaceBlurViewManager",
-                              "Video file was not created or is empty: ${file.absolutePath}"
+                              "Video file was not created or is empty: ${videoFile.absolutePath}"
                       )
                       emitRecordingError("Video file was not created or is empty")
                     }
                   }
                 } catch (e: Exception) {
-                  Log.e("RnFaceBlurViewManager", "Error stopping video encoder: ${e.message}")
+                  Log.e("RnFaceBlurViewManager", "Error stopping recording: ${e.message}")
                   e.printStackTrace()
+                  emitRecordingError("Error stopping recording: ${e.message}")
                 } finally {
                   videoEncoder = null
+                  audioRecorder = null
                   outputFile = null
                 }
                 Log.d("RnFaceBlurViewManager", "Recording stopped")
@@ -413,6 +434,26 @@ class RnFaceBlurViewManager(private val reactContext: ReactApplicationContext) :
       Log.d("RnFaceBlurViewManager", "Recording was not in progress")
     }
   }
+
+  private fun mergeAudioVideo(videoFile: File, audioFile: File, outputFile: File) {
+    try {
+        val command = arrayOf(
+            "-i", videoFile.absolutePath,
+            "-i", audioFile.absolutePath,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-strict", "experimental",
+            outputFile.absolutePath
+        )
+
+        com.arthenica.mobileffmpeg.FFmpeg.execute(command)
+
+        Log.d("RnFaceBlurViewManager", "Audio and video merged successfully")
+    } catch (e: Exception) {
+        Log.e("RnFaceBlurViewManager", "Error merging audio and video: ${e.message}")
+        emitRecordingError("Error merging audio and video: ${e.message}")
+    }
+}
 
   private fun stopCamera() {
     Log.d("RnFaceBlurViewManager", "stopCamera called")
