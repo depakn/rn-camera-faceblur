@@ -170,6 +170,8 @@ class RnFaceBlurView: UIView {
 
     captureSession.commitConfiguration()
 
+    setVideoOrientation()
+
     // Trigger the onCameraPositionUpdate event
     if let onCameraPositionUpdate = onCameraPositionUpdate {
       onCameraPositionUpdate(["position": currentCameraPosition == .front ? "front" : "back"])
@@ -214,11 +216,14 @@ class RnFaceBlurView: UIView {
   }
 
   private func setVideoOrientation() {
-    if let connection = videoDataOutput.connection(with: .video) {
-      if connection.isVideoOrientationSupported {
-        connection.videoOrientation = .portrait
-        videoOrientation = .portrait
-      }
+    guard let connection = videoDataOutput.connection(with: .video) else { return }
+
+    if connection.isVideoOrientationSupported {
+      connection.videoOrientation = .portrait
+    }
+
+    if connection.isVideoMirroringSupported {
+      connection.isVideoMirrored = (currentCameraPosition == .back)
     }
   }
 
@@ -496,19 +501,12 @@ extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate,
     let graphicsContext = UIGraphicsGetCurrentContext()!
 
     // Adjust rotation based on camera position
-    if currentCameraPosition == .front {
-      graphicsContext.translateBy(x: imageSize.width / 2, y: imageSize.height / 2)
-      graphicsContext.rotate(by: .pi / 2)
-      graphicsContext.translateBy(x: -imageSize.height / 2, y: -imageSize.width / 2)
-      graphicsContext.draw(
-        cgImage,
-        in: CGRect(origin: .zero, size: CGSize(width: imageSize.height, height: imageSize.width)))
-    } else {
-      graphicsContext.translateBy(x: 0, y: 0)
-      graphicsContext.draw(
-        cgImage,
-        in: CGRect(origin: .zero, size: CGSize(width: imageSize.width, height: imageSize.height)))
-    }
+    graphicsContext.translateBy(x: imageSize.width / 2, y: imageSize.height / 2)
+    graphicsContext.rotate(by: .pi / 2)
+    graphicsContext.translateBy(x: -imageSize.height / 2, y: -imageSize.width / 2)
+    graphicsContext.draw(
+      cgImage,
+      in: CGRect(origin: .zero, size: CGSize(width: imageSize.height, height: imageSize.width)))
 
     let orientedImage = UIGraphicsGetImageFromCurrentImageContext()
     UIGraphicsEndImageContext()
