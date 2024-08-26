@@ -1,6 +1,6 @@
 {
   "name": "@sd-tech/rn-camera-face-blur",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "React Native on device video face blur",
   "source": "./src/index.tsx",
   "main": "./lib/commonjs/index.js",
