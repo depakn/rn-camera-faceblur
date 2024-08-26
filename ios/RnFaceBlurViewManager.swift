@@ -141,40 +141,68 @@ class RnFaceBlurView: UIView {
     if isRecording {
       return
     }
+
     captureSession.beginConfiguration()
 
-    guard let currentInput = captureSession.inputs.first as? AVCaptureDeviceInput else {
+    // Remove all existing inputs
+    captureSession.inputs.forEach { input in
+      captureSession.removeInput(input)
+    }
+
+    // Toggle camera position
+    currentCameraPosition = currentCameraPosition == .front ? .back : .front
+
+    // Find the new camera
+    guard
+      let newCamera = AVCaptureDevice.default(
+        .builtInWideAngleCamera, for: .video, position: currentCameraPosition)
+    else {
+      print("Unable to access the \(currentCameraPosition) camera")
       captureSession.commitConfiguration()
       return
     }
 
-    captureSession.removeInput(currentInput)
+    do {
+      let newVideoInput = try AVCaptureDeviceInput(device: newCamera)
 
-    currentCameraPosition = currentCameraPosition == .front ? .back : .front
+      if captureSession.canAddInput(newVideoInput) {
+        captureSession.addInput(newVideoInput)
+      } else {
+        print("Could not add video input")
+        captureSession.commitConfiguration()
+        return
+      }
 
-    guard
-      let newDevice = AVCaptureDevice.DiscoverySession(
-        deviceTypes: [.builtInWideAngleCamera], mediaType: .video, position: currentCameraPosition
-      ).devices.first
-    else {
-      fatalError("No camera available")
-    }
+      // Re-add audio input if it was removed
+      if captureSession.inputs.contains(where: {
+        $0 is AVCaptureDeviceInput && ($0 as! AVCaptureDeviceInput).device.hasMediaType(.audio)
+      }) == false {
+        if let audioInput = self.audioInput, captureSession.canAddInput(audioInput) {
+          captureSession.addInput(audioInput)
+        }
+      }
 
-    let newInput = try! AVCaptureDeviceInput(device: newDevice)
+      // Update video orientation
+      if let connection = self.videoDataOutput.connection(with: .video) {
+        if connection.isVideoOrientationSupported {
+          connection.videoOrientation = .portrait
+        }
+        if connection.isVideoMirroringSupported {
+          connection.isVideoMirrored = (currentCameraPosition == .front)
+        }
+      }
 
-    if captureSession.canAddInput(newInput) {
-      captureSession.addInput(newInput)
-    } else {
-      captureSession.addInput(currentInput)
-    }
+      captureSession.commitConfiguration()
 
-    captureSession.commitConfiguration()
+      // Trigger the onCameraPositionUpdate event
+      if let onCameraPositionUpdate = onCameraPositionUpdate {
+        onCameraPositionUpdate(["position": currentCameraPosition == .front ? "front" : "back"])
+      }
 
-    setVideoOrientation()
-
-    // Trigger the onCameraPositionUpdate event
-    if let onCameraPositionUpdate = onCameraPositionUpdate {
-      onCameraPositionUpdate(["position": currentCameraPosition == .front ? "front" : "back"])
+    } catch {
+      print("Error setting up new video input: \(error)")
+      captureSession.commitConfiguration()
+      return
     }
   }
 
@@ -277,71 +305,71 @@ class RnFaceBlurView: UIView {
   }
 
   private func startRecording() {
-        if !isRecording {
-            isRecording = true
-            let outputFileName = NSUUID().uuidString
-            let outputFilePath = NSTemporaryDirectory() + "\(outputFileName).mov"
-            videoOutputURL = URL(fileURLWithPath: outputFilePath)
+    if !isRecording {
+      isRecording = true
+      let outputFileName = NSUUID().uuidString
+      let outputFilePath = NSTemporaryDirectory() + "\(outputFileName).mov"
+      videoOutputURL = URL(fileURLWithPath: outputFilePath)
 
-            guard let videoOutputURL = videoOutputURL else { return }
+      guard let videoOutputURL = videoOutputURL else { return }
 
-            do {
-                assetWriter = try AVAssetWriter(outputURL: videoOutputURL, fileType: .mov)
+      do {
+        assetWriter = try AVAssetWriter(outputURL: videoOutputURL, fileType: .mov)
 
-                let videoSettings: [String: Any] = [
-                    AVVideoCodecKey: AVVideoCodecType.h264,
-                    AVVideoWidthKey: NSNumber(value: Float(self.bounds.height)),
-                    AVVideoHeightKey: NSNumber(value: Float(self.bounds.width)),
-                ]
+        let videoSettings: [String: Any] = [
+          AVVideoCodecKey: AVVideoCodecType.h264,
+          AVVideoWidthKey: NSNumber(value: Float(self.bounds.height)),
+          AVVideoHeightKey: NSNumber(value: Float(self.bounds.width)),
+        ]
 
-                assetWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
-                assetWriterInput?.expectsMediaDataInRealTime = true
+        assetWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        assetWriterInput?.expectsMediaDataInRealTime = true
 
-                // Set the transform on the asset writer input
-                assetWriterInput?.transform = videoOrientationTransform()
+        // Set the transform on the asset writer input
+        assetWriterInput?.transform = videoOrientationTransform()
 
-                let sourcePixelBufferAttributes: [String: Any] = [
-                    kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_32ARGB),
-                    kCVPixelBufferWidthKey as String: NSNumber(value: Float(self.bounds.width)),
-                    kCVPixelBufferHeightKey as String: NSNumber(value: Float(self.bounds.height)),
-                ]
+        let sourcePixelBufferAttributes: [String: Any] = [
+          kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_32ARGB),
+          kCVPixelBufferWidthKey as String: NSNumber(value: Float(self.bounds.width)),
+          kCVPixelBufferHeightKey as String: NSNumber(value: Float(self.bounds.height)),
+        ]
 
-                pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
-                    assetWriterInput: assetWriterInput!,
-                    sourcePixelBufferAttributes: sourcePixelBufferAttributes)
+        pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+          assetWriterInput: assetWriterInput!,
+          sourcePixelBufferAttributes: sourcePixelBufferAttributes)
 
-                if assetWriter!.canAdd(assetWriterInput!) {
-                    assetWriter!.add(assetWriterInput!)
-                }
-
-                // Add audio input to asset writer
-                let audioSettings: [String: Any] = [
-                    AVFormatIDKey: kAudioFormatMPEG4AAC,
-                    AVSampleRateKey: 44100,
-                    AVNumberOfChannelsKey: 2,
-                    AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-                ]
-
-                audioAssetWriterInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
-                audioAssetWriterInput?.expectsMediaDataInRealTime = true
-
-                if assetWriter!.canAdd(audioAssetWriterInput!) {
-                    assetWriter!.add(audioAssetWriterInput!)
-                }
-
-                assetWriter!.startWriting()
-                startTime = nil
-            } catch {
-                print("Error setting up asset writer: \(error)")
-                return
-            }
-
-            // Trigger the onRecordingStatusChange event
-            if let onRecordingStatusChange = onRecordingStatusChange {
-                onRecordingStatusChange(["isRecording": true])
-            }
+        if assetWriter!.canAdd(assetWriterInput!) {
+          assetWriter!.add(assetWriterInput!)
         }
+
+        // Add audio input to asset writer
+        let audioSettings: [String: Any] = [
+          AVFormatIDKey: kAudioFormatMPEG4AAC,
+          AVSampleRateKey: 44100,
+          AVNumberOfChannelsKey: 2,
+          AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+        ]
+
+        audioAssetWriterInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+        audioAssetWriterInput?.expectsMediaDataInRealTime = true
+
+        if assetWriter!.canAdd(audioAssetWriterInput!) {
+          assetWriter!.add(audioAssetWriterInput!)
+        }
+
+        assetWriter!.startWriting()
+        startTime = nil
+      } catch {
+        print("Error setting up asset writer: \(error)")
+        return
+      }
+
+      // Trigger the onRecordingStatusChange event
+      if let onRecordingStatusChange = onRecordingStatusChange {
+        onRecordingStatusChange(["isRecording": true])
+      }
     }
+  }
 
   private func stopRecording() {
     if isRecording {
@@ -528,11 +556,11 @@ extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate,
 
       // Convert the coordinates to match the image orientation
       let convertedBoundingBox = CGRect(
-          x: 1 - boundingBox.minY - boundingBox.height,
-          y: 1 - boundingBox.minX - boundingBox.width,
-          width: boundingBox.height < 0.15 ? 0.15 : boundingBox.height,
-          height: boundingBox.width < 0.2 ? 0.2 : boundingBox.width
-        )
+        x: 1 - boundingBox.minY - boundingBox.height,
+        y: 1 - boundingBox.minX - boundingBox.width,
+        width: boundingBox.height < 0.15 ? 0.15 : boundingBox.height,
+        height: boundingBox.width < 0.2 ? 0.2 : boundingBox.width
+      )
 
       let faceBounds = VNImageRectForNormalizedRect(
         convertedBoundingBox, Int(image.extent.width), Int(image.extent.height))
