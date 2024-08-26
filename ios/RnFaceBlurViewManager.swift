@@ -272,71 +272,71 @@ class RnFaceBlurView: UIView {
   }
 
   private func startRecording() {
-    if !isRecording {
-      isRecording = true
-      let outputFileName = NSUUID().uuidString
-      let outputFilePath = NSTemporaryDirectory() + "\(outputFileName).mov"
-      videoOutputURL = URL(fileURLWithPath: outputFilePath)
+        if !isRecording {
+            isRecording = true
+            let outputFileName = NSUUID().uuidString
+            let outputFilePath = NSTemporaryDirectory() + "\(outputFileName).mov"
+            videoOutputURL = URL(fileURLWithPath: outputFilePath)
 
-      guard let videoOutputURL = videoOutputURL else { return }
+            guard let videoOutputURL = videoOutputURL else { return }
 
-      do {
-        assetWriter = try AVAssetWriter(outputURL: videoOutputURL, fileType: .mov)
+            do {
+                assetWriter = try AVAssetWriter(outputURL: videoOutputURL, fileType: .mov)
 
-        let videoSettings: [String: Any] = [
-          AVVideoCodecKey: AVVideoCodecType.h264,
-          AVVideoWidthKey: NSNumber(value: Float(self.bounds.height)),
-          AVVideoHeightKey: NSNumber(value: Float(self.bounds.width)),
-        ]
+                let videoSettings: [String: Any] = [
+                    AVVideoCodecKey: AVVideoCodecType.h264,
+                    AVVideoWidthKey: NSNumber(value: Float(self.bounds.height)),
+                    AVVideoHeightKey: NSNumber(value: Float(self.bounds.width)),
+                ]
 
-        assetWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
-        assetWriterInput?.expectsMediaDataInRealTime = true
+                assetWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+                assetWriterInput?.expectsMediaDataInRealTime = true
 
-        // Set the transform on the asset writer input
-        assetWriterInput?.transform = videoOrientationTransform()
+                // Set the transform on the asset writer input
+                assetWriterInput?.transform = videoOrientationTransform()
 
-        let sourcePixelBufferAttributes: [String: Any] = [
-          kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_32ARGB),
-          kCVPixelBufferWidthKey as String: NSNumber(value: Float(self.bounds.width)),
-          kCVPixelBufferHeightKey as String: NSNumber(value: Float(self.bounds.height)),
-        ]
+                let sourcePixelBufferAttributes: [String: Any] = [
+                    kCVPixelBufferPixelFormatTypeKey as String: NSNumber(value: kCVPixelFormatType_32ARGB),
+                    kCVPixelBufferWidthKey as String: NSNumber(value: Float(self.bounds.width)),
+                    kCVPixelBufferHeightKey as String: NSNumber(value: Float(self.bounds.height)),
+                ]
 
-        pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
-          assetWriterInput: assetWriterInput!,
-          sourcePixelBufferAttributes: sourcePixelBufferAttributes)
+                pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
+                    assetWriterInput: assetWriterInput!,
+                    sourcePixelBufferAttributes: sourcePixelBufferAttributes)
 
-        if assetWriter!.canAdd(assetWriterInput!) {
-          assetWriter!.add(assetWriterInput!)
+                if assetWriter!.canAdd(assetWriterInput!) {
+                    assetWriter!.add(assetWriterInput!)
+                }
+
+                // Add audio input to asset writer
+                let audioSettings: [String: Any] = [
+                    AVFormatIDKey: kAudioFormatMPEG4AAC,
+                    AVSampleRateKey: 44100,
+                    AVNumberOfChannelsKey: 2,
+                    AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+                ]
+
+                audioAssetWriterInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+                audioAssetWriterInput?.expectsMediaDataInRealTime = true
+
+                if assetWriter!.canAdd(audioAssetWriterInput!) {
+                    assetWriter!.add(audioAssetWriterInput!)
+                }
+
+                assetWriter!.startWriting()
+                startTime = nil
+            } catch {
+                print("Error setting up asset writer: \(error)")
+                return
+            }
+
+            // Trigger the onRecordingStatusChange event
+            if let onRecordingStatusChange = onRecordingStatusChange {
+                onRecordingStatusChange(["isRecording": true])
+            }
         }
-
-        // Add audio input to asset writer
-        let audioSettings: [String: Any] = [
-          AVFormatIDKey: kAudioFormatMPEG4AAC,
-          AVSampleRateKey: 44100,
-          AVNumberOfChannelsKey: 2,
-          AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-        ]
-
-        audioAssetWriterInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
-        audioAssetWriterInput?.expectsMediaDataInRealTime = true
-
-        if assetWriter!.canAdd(audioAssetWriterInput!) {
-          assetWriter!.add(audioAssetWriterInput!)
-        }
-
-        assetWriter!.startWriting()
-        startTime = nil
-      } catch {
-        print("Error setting up asset writer: \(error)")
-        return
-      }
-
-      // Trigger the onRecordingStatusChange event
-      if let onRecordingStatusChange = onRecordingStatusChange {
-        onRecordingStatusChange(["isRecording": true])
-      }
     }
-  }
 
   private func stopRecording() {
     if isRecording {
@@ -395,7 +395,7 @@ class RnFaceBlurView: UIView {
     let facesBoundingBoxes: [CAShapeLayer] = observedFaces.map { observedFace in
       let faceBoundingBoxOnScreen = previewLayer.layerRectConverted(
         fromMetadataOutputRect: observedFace.boundingBox)
-      let faceBoundingBoxPath = CGPath(rect: faceBoundingBoxOnScreen, transform: nil)
+      _ = CGPath(rect: faceBoundingBoxOnScreen, transform: nil)
       let faceBoundingBoxShape = CAShapeLayer()
 
       return faceBoundingBoxShape
@@ -495,13 +495,20 @@ extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate,
     UIGraphicsBeginImageContextWithOptions(imageSize, false, 1.0)
     let graphicsContext = UIGraphicsGetCurrentContext()!
 
-    // Draw the video frame with correct orientation
-    graphicsContext.translateBy(x: imageSize.width / 2, y: imageSize.height / 2)
-    graphicsContext.rotate(by: .pi / 2)
-    graphicsContext.translateBy(x: -imageSize.height / 2, y: -imageSize.width / 2)
-    graphicsContext.draw(
-      cgImage,
-      in: CGRect(origin: .zero, size: CGSize(width: imageSize.height, height: imageSize.width)))
+    // Adjust rotation based on camera position
+    if currentCameraPosition == .front {
+      graphicsContext.translateBy(x: imageSize.width / 2, y: imageSize.height / 2)
+      graphicsContext.rotate(by: .pi / 2)
+      graphicsContext.translateBy(x: -imageSize.height / 2, y: -imageSize.width / 2)
+      graphicsContext.draw(
+        cgImage,
+        in: CGRect(origin: .zero, size: CGSize(width: imageSize.height, height: imageSize.width)))
+    } else {
+      graphicsContext.translateBy(x: 0, y: 0)
+      graphicsContext.draw(
+        cgImage,
+        in: CGRect(origin: .zero, size: CGSize(width: imageSize.width, height: imageSize.height)))
+    }
 
     let orientedImage = UIGraphicsGetImageFromCurrentImageContext()
     UIGraphicsEndImageContext()
@@ -523,11 +530,11 @@ extension RnFaceBlurView: AVCaptureVideoDataOutputSampleBufferDelegate,
 
       // Convert the coordinates to match the image orientation
       let convertedBoundingBox = CGRect(
-        x: 1 - boundingBox.minY - boundingBox.height,  // Changed this line
-        y: 1 - boundingBox.minX - boundingBox.width,
-        width: boundingBox.height,
-        height: boundingBox.width
-      )
+          x: 1 - boundingBox.minY - boundingBox.height,
+          y: 1 - boundingBox.minX - boundingBox.width,
+          width: boundingBox.height < 0.15 ? 0.15 : boundingBox.height,
+          height: boundingBox.width < 0.2 ? 0.2 : boundingBox.width
+        )
 
       let faceBounds = VNImageRectForNormalizedRect(
         convertedBoundingBox, Int(image.extent.width), Int(image.extent.height))
